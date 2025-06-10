@@ -4,13 +4,13 @@
 
 ## 环境要求
 
-- JDK 17+
+- JDK 21+
 - Maven 3.6+
 - 阿里云通义千问 API Key
 
 ## 配置说明
 
-1. 在运行项目前，请设置环境变量 `ALIBABA_API_KEY`，值为您的阿里云通义千问 API Key
+1. 在运行项目前，请设置环境变量 `DASHSCOPE_API_KEY`，值为您的阿里云通义千问 API Key
 2. 默认使用 `qwen-turbo` 模型
 3. 服务默认运行在 8080 端口
 

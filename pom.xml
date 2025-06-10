@@ -13,6 +13,8 @@
     <description>AI-Based Code Review Tool</description>
     <modules>
         <module>chat</module>
+        <module>cr-app</module>
+        <module>github-integration</module>
     </modules>
 
 
