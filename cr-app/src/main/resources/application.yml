@@ -1,0 +1,67 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: codebase-cr
+  
+  # Spring AI 配置
+  ai:
+    # OpenAI 配置 (默认)
+    openai:
+      api-key: ${DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      chat:
+        options:
+          model: qwen-max
+      embedding:
+        options:
+          model: text-embedding-v1
+    
+    # 向量数据库配置 (Chroma)
+#    vectorstore:
+#      elasticsearch:
+#        initialize-schema: true
+#        index-name: yingzi_
+#        similarity: cosine
+#        dimensions: 1536
+  elasticsearch:
+    uris: https://127.0.0.1:9200
+    username: elastic
+    password: ToTLyqY*xi1ORwONs58H
+
+# 应用相关配置
+app:
+  github:
+    token: ${GITHUB_TOKEN:your-github-token}
+    webhook:
+      secret: ${GITHUB_WEBHOOK_SECRET:your-webhook-secret}
+  
+  knowledge:
+    # 知识库存储路径
+    base-path: ${KNOWLEDGE_BASE_PATH:./knowledge-base}
+    style-guide:
+      # 编码规范文档路径
+      documents-path: ${app.knowledge.base-path}/style-guides
+    project:
+      # 项目代码缓存路径
+      cache-path: ${app.knowledge.base-path}/projects
+
+# 日志配置
+logging:
+  level:
+    com.hxg.aicodereviewer: INFO
+    org.springframework.ai: DEBUG
+    org.kohsuke.github: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# 异步任务配置
+task:
+  execution:
+    pool:
+      core-size: 2
+      max-size: 5
+      queue-capacity: 100
+      keep-alive: 60s
+
