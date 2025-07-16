@@ -1,0 +1,12 @@
+# Java/Maven build artifacts
+target/
+
+
+
+# Environment variable files
+.env
+*.env
+
+# Logs
+*.log
+
