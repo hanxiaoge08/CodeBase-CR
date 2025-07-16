@@ -5,6 +5,7 @@ import com.hxg.crApp.adapter.llm.LlmAdapter;
 import com.hxg.crApp.dto.review.ReviewResultDTO;
 import com.hxg.crApp.dto.review.ReviewTaskDTO;
 //import com.hxg.crApp.knowledge.RAGService;
+import com.hxg.crApp.knowledge.RAGService;
 import com.hxg.crApp.service.port.ICodeReviewService;
 import com.hxg.crApp.service.port.IKnowledgeBaseService;
 import com.hxg.crApp.service.port.IResultPublishService;
@@ -38,6 +39,8 @@ public class CodeReviewServiceImpl implements ICodeReviewService {
 
     @Autowired
     private IResultPublishService resultPublishService;
+    @Autowired
+    private RAGService ragService;
 
 //    @Autowired
 //    private IKnowledgeBaseService knowledgeBaseService;
@@ -62,8 +65,7 @@ public class CodeReviewServiceImpl implements ICodeReviewService {
             }
             
             // TODO: 3. 使用RAG检索相关上下文
-            //String contextInfo = ragService.retrieveContext(diffContent, task.repositoryFullName());
-            String contextInfo=null;
+            String contextInfo = ragService.retrieveContext(diffContent, task.repositoryFullName());
             // 4. 调用LLM进行审查
             ReviewResultDTO result = llmAdapter.getReviewComments(
                 diffContent, 

@@ -1,11 +1,19 @@
 package com.hxg.crApp.adapter.llm;
 
+import com.alibaba.cloud.ai.advisor.DocumentRetrievalAdvisor;
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
+import com.alibaba.cloud.ai.dashscope.rag.DashScopeDocumentRetriever;
+import com.alibaba.cloud.ai.dashscope.rag.DashScopeDocumentRetrieverOptions;
 import com.hxg.crApp.dto.review.ReviewResultDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,8 +28,22 @@ public class LlmAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(LlmAdapter.class);
 
-    @Autowired
-    private ChatClient chatClient;
+    private final ChatClient chatClient;
+
+    public LlmAdapter(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder
+                // 实现 Logger 的 Advisor
+                .defaultAdvisors(
+                        new SimpleLoggerAdvisor()
+                )
+                // 设置 ChatClient 中 ChatModel 的 Options 参数
+                .defaultOptions(
+                        DashScopeChatOptions.builder()
+                                .withTopP(0.7)
+                                .build()
+                )
+                .build();
+    }
 
     /**
      * 获取代码审查意见

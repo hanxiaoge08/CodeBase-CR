@@ -1,152 +1,132 @@
-//package com.hxg.crApp.knowledge;
-//
-//import org.slf4j.Logger;
-//import org.slf4j.LoggerFactory;
-//import org.springframework.ai.document.Document;
-//import org.springframework.ai.vectorstore.SearchRequest;
-//import org.springframework.ai.vectorstore.VectorStore;
-//import org.springframework.ai.vectorstore.elasticsearch.ElasticsearchVectorStore;
-//import org.springframework.beans.factory.annotation.Autowired;
-//import org.springframework.stereotype.Service;
-//
-//import java.util.List;
-//import java.util.Map;
-//import java.util.stream.Collectors;
-//
-///**
-// * RAG服务
-// * <p>
-// * 职责：执行检索增强生成（RAG）中的"检索"步骤
-// * 核心方法：retrieveContext(String codeSnippet, String repoFullName)
-// * 流程：接收一小段代码 -> 在规范库和项目上下文中分别执行向量搜索 -> 返回最相关的文本片段
-// */
-//@Service
-//public class RAGService {
-//
-//    private static final Logger logger = LoggerFactory.getLogger(RAGService.class);
-//
-//    @Autowired
-//    private ElasticsearchVectorStore elasticsearchVectorStore;
-//
-//    // 向量检索的相关常量
-//    private static final int TOP_K = 5; // 检索top-k个最相关的文档
-//    private static final double SIMILARITY_THRESHOLD = 0.7; // 相似度阈值
-//
-//    /**
-//     * 检索相关上下文信息
-//     *
-//     * @param codeSnippet  代码片段
-//     * @param repoFullName 仓库全名
-//     * @return 相关的上下文信息
-//     */
-//    public String retrieveContext(String codeSnippet, String repoFullName) {
-//        try {
-//            logger.debug("开始检索上下文: repo={}", repoFullName);
-//
-//            // 创建搜索请求
-//            SearchRequest searchRequest = SearchRequest.builder().query(codeSnippet)
-//                    .topK(TOP_K)
-//                    .similarityThreshold(SIMILARITY_THRESHOLD)
-//                    .build();
-//
-//            // 执行向量搜索
-//            List<Document> relevantDocs = elasticsearchVectorStore.similaritySearch(searchRequest);
-//
-//            if (relevantDocs.isEmpty()) {
-//                logger.debug("未找到相关上下文文档: repo={}", repoFullName);
-//                return "暂无相关上下文信息";
-//            }
-//
-//            // 分类处理检索到的文档
-//            String styleGuideContext = extractStyleGuideContext(relevantDocs);
-//            String projectContext = extractProjectContext(relevantDocs, repoFullName);
-//
-//            // 组装上下文信息
-//            StringBuilder contextBuilder = new StringBuilder();
-//
-//            if (!styleGuideContext.isEmpty()) {
-//                contextBuilder.append("**相关编码规范:**\n")
-//                        .append(styleGuideContext)
-//                        .append("\n\n");
-//            }
-//
-//            if (!projectContext.isEmpty()) {
-//                contextBuilder.append("**项目代码示例:**\n")
-//                        .append(projectContext)
-//                        .append("\n\n");
-//            }
-//
-//            String finalContext = contextBuilder.toString().trim();
-//            logger.debug("检索到上下文信息: repo={}, 文档数={}, 字符长度={}",
-//                    repoFullName, relevantDocs.size(), finalContext.length());
-//
-//            return finalContext.isEmpty() ? "暂无相关上下文信息" : finalContext;
-//
-//        } catch (Exception e) {
-//            logger.error("检索上下文时发生错误: repo={}", repoFullName, e);
-//            return "检索上下文时发生错误";
-//        }
-//    }
-//
-//    /**
-//     * 提取编码规范相关的上下文
-//     *
-//     * @param documents 检索到的文档
-//     * @return 编码规范上下文
-//     */
-//    private String extractStyleGuideContext(List<Document> documents) {
-//        return documents.stream()
-//                .filter(doc -> isStyleGuideDocument(doc))
-//                .map(Document::getText)
-//                .limit(3) // 限制数量避免上下文过长
-//                .collect(Collectors.joining("\n---\n"));
-//    }
-//
-//    /**
-//     * 提取项目代码相关的上下文
-//     *
-//     * @param documents    检索到的文档
-//     * @param repoFullName 仓库全名
-//     * @return 项目代码上下文
-//     */
-//    private String extractProjectContext(List<Document> documents, String repoFullName) {
-//        return documents.stream()
-//                .filter(doc -> isProjectDocument(doc, repoFullName))
-//                .map(Document::getText)
-//                .limit(3) // 限制数量避免上下文过长
-//                .collect(Collectors.joining("\n---\n"));
-//    }
-//
-//    /**
-//     * 判断是否为编码规范文档
-//     *
-//     * @param document 文档
-//     * @return true如果是编码规范文档
-//     */
-//    private boolean isStyleGuideDocument(Document document) {
-//        Map<String, Object> metadata = document.getMetadata();
-//        String source = (String) metadata.get("source");
-//        String type = (String) metadata.get("type");
-//
-//        return "style_guide".equals(type) ||
-//                (source != null && source.contains("style_guide"));
-//    }
-//
-//    /**
-//     * 判断是否为指定项目的文档
-//     *
-//     * @param document     文档
-//     * @param repoFullName 仓库全名
-//     * @return true如果是指定项目的文档
-//     */
-//    private boolean isProjectDocument(Document document, String repoFullName) {
-//        Map<String, Object> metadata = document.getMetadata();
-//        String source = (String) metadata.get("source");
-//        String repo = (String) metadata.get("repository");
-//        String type = (String) metadata.get("type");
-//
-//        return "project_code".equals(type) &&
-//                (repoFullName.equals(repo) ||
-//                        (source != null && source.contains(repoFullName)));
-//    }
-//}
+package com.hxg.crApp.knowledge;
+
+import com.alibaba.cloud.ai.advisor.DocumentRetrievalAdvisor;
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.rag.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.SystemPromptTemplate;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.document.DocumentReader;
+import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
+
+/**
+ * RAG服务
+ * <p>
+ * 职责：执行检索增强生成（RAG）中的"检索"步骤
+ * 核心方法：retrieveContext(String codeSnippet, String repoFullName)
+ * 流程：接收一小段代码 -> 在阿里云百炼知识库中执行向量搜索 -> 返回最相关的文本片段
+ *
+ */
+@Service()
+public class RAGService {
+
+    private static final Logger logger = LoggerFactory.getLogger(RAGService.class);
+
+    private static final String indexName = "编码规范知识库";
+
+    @Value("classpath:/data/spring_ai_alibaba_quickstart.pdf")
+    private Resource springAiResource;
+
+    private final ChatClient chatClient;
+
+    private final DashScopeApi dashscopeApi;
+
+    public RAGService(ChatClient.Builder builder, DashScopeApi dashscopeApi) {
+        DocumentRetriever retriever = new DashScopeDocumentRetriever(dashscopeApi,
+                DashScopeDocumentRetrieverOptions.builder().withIndexName(indexName).build());
+
+        this.dashscopeApi = dashscopeApi;
+        this.chatClient = builder
+                .defaultAdvisors(new DocumentRetrievalAdvisor(retriever))
+                .build();
+    }
+
+    public void importDocuments() {
+        String path = saveToTempFile(springAiResource);
+
+        // 1. import and split documents
+        DocumentReader reader = new DashScopeDocumentCloudReader(path, dashscopeApi, null);
+        List<Document> documentList = reader.get();
+        logger.info("{} documents loaded and split", documentList.size());
+
+        // 1. add documents to DashScope cloud storage
+        VectorStore vectorStore = new DashScopeCloudStore(dashscopeApi, new DashScopeStoreOptions(indexName));
+        vectorStore.add(documentList);
+        logger.info("{} documents added to dashscope cloud vector store", documentList.size());
+    }
+
+    private String saveToTempFile(Resource springAiResource) {
+        try {
+            File tempFile = File.createTempFile("spring_ai_alibaba_quickstart", ".pdf");
+            tempFile.deleteOnExit();
+
+            try (InputStream inputStream = springAiResource.getInputStream();
+                 FileOutputStream outputStream = new FileOutputStream(tempFile)) {
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+            }
+
+            return tempFile.getAbsolutePath();
+        }
+        catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public Flux<ChatResponse> retrieve(String message) {
+        return chatClient.prompt().user(message).stream().chatResponse();
+    }
+
+    public String retrieveContext(String codeSnippet, String repoFullName) {
+        try {
+            // 构建查询prompt，包含代码片段和仓库信息
+            String queryPrompt = String.format(
+                "请根据以下代码片段查找相关的编码规范和最佳实践：\n\n" +
+                "仓库：%s\n" +
+                "代码片段：\n```\n%s\n```\n\n" +
+                "请提供与此代码相关的编码规范、代码质量要求和改进建议。",
+                repoFullName, codeSnippet
+            );
+            
+            // 使用chatClient查询知识库，获取相关上下文
+            String context = chatClient.prompt()
+                .user(queryPrompt)
+                .call()
+                .content();
+            
+            logger.debug("Retrieved context for code snippet from repository {}: {}", 
+                repoFullName, context.substring(0, Math.min(context.length(), 200)) + "...");
+            
+            return context;
+            
+        } catch (Exception e) {
+            logger.error("Failed to retrieve context from knowledge base for repository {}: {}", 
+                repoFullName, e.getMessage(), e);
+            
+            // 返回默认的编码规范提示
+            return "请遵循以下基本编码规范：\n" +
+                   "1. 代码应具有良好的可读性和可维护性\n" +
+                   "2. 遵循命名约定和代码格式规范\n" +
+                   "3. 添加适当的注释和文档\n" +
+                   "4. 确保代码的性能和安全性\n" +
+                   "5. 遵循项目特定的编码标准";
+        }
+    }
+}

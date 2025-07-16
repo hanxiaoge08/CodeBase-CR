@@ -64,7 +64,7 @@ public class GithubWebhookServiceImpl implements IGithubWebhookService {
     private boolean shouldProcessEvent(PullRequestEventDTO event) {
         // 只处理opened和synchronize事件
         String action = event.action();
-        if (!"opened".equals(action) && !"synchronize".equals(action)) {
+        if (!"opened".equals(action) && !"synchronize".equals(action)&&!"reopened".equals(action)) {
             return false;
         }
         
