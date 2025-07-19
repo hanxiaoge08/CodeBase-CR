@@ -1,0 +1,22 @@
+server:
+  port: 8087
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  # Spring AI 配置
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
+  application:
+    name: CodeBase-Wiki
+
+# 日志输出配置
+logging:
+  level:
+    root: INFO
+  org:
+    springframework:
+      boot: error
+  file:
+    name: ./logs/jdeepwiki.log

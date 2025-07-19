@@ -9,7 +9,6 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.hxg</groupId>
     <artifactId>cr-app</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>cr-app</name>

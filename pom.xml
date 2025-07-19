@@ -13,6 +13,7 @@
     <description>AI-Based Code Review Tool</description>
     <modules>
         <module>cr-app</module>
+        <module>CodeBase-Wiki</module>
     </modules>
 
 
