@@ -3,3 +3,4 @@
 # VS Code files
 .vscode/
 *.iml
+logs/

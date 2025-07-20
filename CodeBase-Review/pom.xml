@@ -9,7 +9,7 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>cr-app</artifactId>
+    <artifactId>CodeBase-Review</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>cr-app</name>
     <description>AI Code Reviewer Application</description>
