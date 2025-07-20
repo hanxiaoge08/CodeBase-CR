@@ -1,6 +1,6 @@
 # Java/Maven build artifacts
 target/
-
+data/
 
 
 # Environment variable files
