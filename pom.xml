@@ -12,7 +12,7 @@
     <name>CodeBase-CR</name>
     <description>AI-Based Code Review Tool</description>
     <modules>
-        <module>cr-app</module>
+        <module>CodeBase-Review</module>
         <module>CodeBase-Wiki</module>
     </modules>
 
