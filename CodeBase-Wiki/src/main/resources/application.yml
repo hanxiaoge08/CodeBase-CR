@@ -1,5 +1,5 @@
 server:
-  port: 8087
+  port: 8888
   tomcat:
     uri-encoding: UTF-8
 
@@ -8,10 +8,13 @@ spring:
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
+      chat:
+        options:
+          model: qwen-plus-2025-01-25
   application:
     name: CodeBase-Wiki
   datasource:
-    url: jdbc:sqlite:CodeBase-Wiki/data/codebasewiki_db.sqlite
+    url: jdbc:sqlite:data/codebasewiki_db.sqlite
     driver-class-name: org.sqlite.JDBC
     username: test
     password: test
