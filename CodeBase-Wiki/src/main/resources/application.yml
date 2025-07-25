@@ -1,5 +1,5 @@
 server:
-  port: 8888
+  port: 8085
   tomcat:
     uri-encoding: UTF-8
 
@@ -32,4 +32,4 @@ logging:
     springframework:
       boot: error
   file:
-    name: ./logs/jdeepwiki.log
+    name: ./logs/codebasewiki.log

@@ -3,6 +3,7 @@ package com.hxg.crApp.knowledge;
 import com.alibaba.cloud.ai.advisor.DocumentRetrievalAdvisor;
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.rag.*;
+import com.hxg.crApp.service.ReviewMemoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -12,6 +13,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentReader;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,9 @@ public class RAGService {
     private static final Logger logger = LoggerFactory.getLogger(RAGService.class);
 
     private static final String indexName = "编码规范知识库";
+    
+    @Autowired(required = false)
+    private ReviewMemoryService reviewMemoryService;
 
     @Value("classpath:/data/spring_ai_alibaba_quickstart.pdf")
     private Resource springAiResource;
@@ -96,25 +101,41 @@ public class RAGService {
 
     public String retrieveContext(String codeSnippet, String repoFullName) {
         try {
-            // 构建查询prompt，包含代码片段和仓库信息
-            String queryPrompt = String.format(
-                "请根据以下代码片段查找相关的编码规范和最佳实践：\n\n" +
-                "仓库：%s\n" +
-                "代码片段：\n```\n%s\n```\n\n" +
-                "请提供与此代码相关的编码规范、代码质量要求和改进建议。",
-                repoFullName, codeSnippet
-            );
-            
-            // 使用chatClient查询知识库，获取相关上下文
-            String context = chatClient.prompt()
-                .user(queryPrompt)
-                .call()
-                .content();
-            
-            logger.debug("Retrieved context for code snippet from repository {}: {}", 
-                repoFullName, context.substring(0, Math.min(context.length(), 200)) + "...");
-            
-            return context;
+            // 检查是否有记忆服务可用
+            if (reviewMemoryService != null && reviewMemoryService.isMemoryServiceAvailable()) {
+                logger.info("使用记忆服务获取上下文: repoFullName={}", repoFullName);
+                
+                // 使用记忆服务搜索相关上下文
+                return reviewMemoryService.searchContextForCodeReview(
+                    repoFullName, 
+                    codeSnippet, 
+                    "代码分析", 
+                    "分析代码片段并提供编码建议", 
+                    List.of()
+                );
+            } else {
+                logger.warn("记忆服务不可用，使用传统知识库查询");
+                
+                // 构建查询prompt，包含代码片段和仓库信息
+                String queryPrompt = String.format(
+                    "请根据以下代码片段查找相关的编码规范和最佳实践：\n\n" +
+                    "仓库：%s\n" +
+                    "代码片段：\n```\n%s\n```\n\n" +
+                    "请提供与此代码相关的编码规范、代码质量要求和改进建议。",
+                    repoFullName, codeSnippet
+                );
+                
+                // 使用chatClient查询知识库，获取相关上下文
+                String context = chatClient.prompt()
+                    .user(queryPrompt)
+                    .call()
+                    .content();
+                
+                logger.debug("Retrieved context for code snippet from repository {}: {}", 
+                    repoFullName, context.substring(0, Math.min(context.length(), 200)) + "...");
+                
+                return context;
+            }
             
         } catch (Exception e) {
             logger.error("Failed to retrieve context from knowledge base for repository {}: {}", 

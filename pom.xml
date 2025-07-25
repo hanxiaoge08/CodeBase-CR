@@ -14,6 +14,7 @@
     <modules>
         <module>CodeBase-Review</module>
         <module>CodeBase-Wiki</module>
+        <module>CodeBase-Memory</module>
     </modules>
 
 
@@ -35,6 +36,8 @@
 
         <!-- Spring AI Alibaba -->
         <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
+
+        <maven-deploy-plugin.version>3.1.1</maven-deploy-plugin.version>
     </properties>
 
     <dependencyManagement>

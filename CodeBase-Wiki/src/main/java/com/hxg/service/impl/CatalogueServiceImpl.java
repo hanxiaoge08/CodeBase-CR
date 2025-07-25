@@ -1,32 +1,28 @@
 package com.hxg.service.impl;
 
-import cn.hutool.core.lang.UUID;
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONException;
-import com.alibaba.fastjson2.JSONObject;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hxg.context.ExecutionContext;
-import com.hxg.llm.prompt.AnalyzeCataloguePrompt;
 import com.hxg.llm.prompt.GenDocPrompt;
 import com.hxg.llm.service.LlmService;
+import com.hxg.llm.prompt.AnalyzeCataloguePrompt;
 import com.hxg.mapper.CatalogueMapper;
 import com.hxg.model.dto.CatalogueStruct;
 import com.hxg.model.dto.GenCatalogueDTO;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.model.enums.CatalogueStatusEnum;
-import com.hxg.model.vo.CatalogueListVo;
 import com.hxg.service.ICatalogueService;
+import com.hxg.service.IMemoryIntegrationService;
+import com.hxg.utils.RegexUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import com.hxg.utils.RegexUtil;
+import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
+import com.hxg.model.vo.CatalogueListVo;
 
 /**
  * @author hxg
@@ -37,9 +33,11 @@ import java.util.stream.Collectors;
 @Service
 public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue> implements ICatalogueService {
     private final LlmService llmService;
+    private final IMemoryIntegrationService memoryIntegrationService;
 
-    public CatalogueServiceImpl(LlmService llmService) {
+    public CatalogueServiceImpl(LlmService llmService, IMemoryIntegrationService memoryIntegrationService) {
         this.llmService = llmService;
+        this.memoryIntegrationService = memoryIntegrationService;
     }
 
     @Override
@@ -60,83 +58,45 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public CatalogueStruct processCatalogueStruct(String result) {
-        try {
-            // 首先解析外层JSON，检查是否包含documentation_structure字段
-            JSONObject jsonObject = JSON.parseObject(result);
-            
-            CatalogueStruct catalogueStruct;
-            
-            // 如果包含documentation_structure字段，则提取该字段进行解析
-            if (jsonObject.containsKey("documentation_structure")) {
-                log.info("检测到documentation_structure包装，正在提取内容");
-                JSONObject documentationStructure = jsonObject.getJSONObject("documentation_structure");
-                catalogueStruct = documentationStructure.toJavaObject(CatalogueStruct.class);
-            } else {
-                // 如果没有包装，直接解析
-                log.info("直接解析CatalogueStruct结构");
-                catalogueStruct = JSON.parseObject(result, CatalogueStruct.class);
-            }
-            
-            if (catalogueStruct.getItems() == null || catalogueStruct.getItems().isEmpty()) {
-                log.error("解析LLM生成项目目录失败, LLM生成的目录为空");
-                throw new RuntimeException("解析LLM生成项目目录失败, LLM生成的目录为空");
-            }
-            
-            log.info("成功解析CatalogueStruct，包含{}个顶级项目", catalogueStruct.getItems().size());
-            return catalogueStruct;
-        } catch (JSONException e) {
-            String msg = "解析LLM生成项目目录失败, LLM生成的目录格式不正确: " + e.getMessage();
-            log.error(msg, e);
-            throw new RuntimeException(msg);
-        } catch (RuntimeException e) {
-            log.error(e.getMessage(), e);
-            throw e;
+        String documentationStructure= RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
+        if(StringUtils.isEmpty(documentationStructure)){
+            throw new RuntimeException("LLM生成项目目录结构为空");
         }
+        log.info("LLM生成项目目录结构内容：{}",documentationStructure);
+        return JSON.parseObject(documentationStructure, CatalogueStruct.class);
     }
 
     @Override
     public List<Catalogue> saveCatalogueStruct(ExecutionContext context, CatalogueStruct catalogueStruct) {
-        log.info("保存项目目录到数据库：{}", catalogueStruct);
-        List<Catalogue> saveList = new ArrayList<>();
-        catalogueStruct.getItems().forEach(item -> {
-            Catalogue catalogue = Catalogue.builder()
-                    .catalogueId(UUID.fastUUID().toString())
-                    .taskId(context.getTaskId())
-                    .title(item.getTitle())
-                    .name(item.getName())
-                    .prompt(item.getPrompt())
-                    .dependentFile(String.join(",", item.getDependent_file()))
-                    .status(CatalogueStatusEnum.IN_PROGRESS.getCode())
-                    .build();
-            saveList.add(catalogue);
-            
-            item.getChildren().forEach(child -> {
-                Catalogue childCatalogue = Catalogue.builder()
-                        .catalogueId(UUID.fastUUID().toString())
-                        .taskId(context.getTaskId())
-                        .title(child.getTitle())
-                        .name(child.getName())
-                        .parentCatalogueId(catalogue.getCatalogueId())
-                        .prompt(child.getPrompt())
-                        .dependentFile(String.join(",", child.getDependent_file()))
-                        .status(CatalogueStatusEnum.IN_PROGRESS.getCode())
-                        .build();
-                saveList.add(childCatalogue);
-            });
-        });
-        // 使用逐个保存来确保能够获取到自增的ID
-        saveList.forEach(this::save);
+        List<Catalogue> catalogueList = catalogueStruct.getItems().stream().map(catalogue -> {
+            Catalogue catalogueEntity = new Catalogue();
+            catalogueEntity.setTaskId(context.getTask().getTaskId());
+            catalogueEntity.setCatalogueId(java.util.UUID.randomUUID().toString());
+            catalogueEntity.setParentCatalogueId(null);//TODO: 根据实际结构设置
+            catalogueEntity.setName(catalogue.getName());
+            catalogueEntity.setTitle(catalogue.getTitle());
+            catalogueEntity.setPrompt(catalogue.getPrompt());
+            catalogueEntity.setDependentFile(JSON.toJSONString(catalogue.getDependent_file()));
+            catalogueEntity.setChildren(JSON.toJSONString(catalogue.getChildren()));
+            catalogueEntity.setStatus(CatalogueStatusEnum.IN_PROGRESS.getCode());
+            catalogueEntity.setCreateTime(LocalDateTime.now());
+            return catalogueEntity;
+        }).collect(Collectors.toList());
         
-        return saveList;
+        this.saveBatch(catalogueList);
+        return catalogueList;
     }
 
     @Override
     public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath) {
         genCatalogueDTO.getCatalogueList().forEach(catalogue -> {
-            if(StringUtils.isNotEmpty(catalogue.getParentCatalogueId())){
+            if(StringUtils.hasText(catalogue.getParentCatalogueId())){
                 generateCatalogueDetail(catalogue,fileTree,genCatalogueDTO.getCatalogueStruct(),localPath);
             }
         });
+        
+        // 文档生成完成后，异步索引到Mem0记忆系统
+        indexCataloguesToMemoryAsync(genCatalogueDTO, localPath);
     }
 
     @Override
@@ -164,22 +124,29 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
             catalogue.setFailReason(e.getMessage());
         }finally {
             this.updateById(catalogue);
+            
+            // 单个文档生成完成后，尝试索引到Mem0
+            if (catalogue.getStatus() != null && 
+                catalogue.getStatus().equals(CatalogueStatusEnum.COMPLETED.getCode()) &&
+                StringUtils.hasText(catalogue.getContent())) {
+                
+                indexSingleCatalogueToMemoryAsync(catalogue);
+            }
         }
     }
 
     @Override
     public void deleteCatalogueByTaskId(String taskId) {
-        LambdaQueryWrapper<Catalogue> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Catalogue::getTaskId, taskId);
-        this.remove(queryWrapper);
+        this.lambdaUpdate()
+                .eq(Catalogue::getTaskId, taskId)
+                .remove();
     }
 
     @Override
     public List<Catalogue> getCatalogueByTaskId(String taskId) {
-        LambdaQueryWrapper<Catalogue> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Catalogue::getTaskId, taskId);
-        queryWrapper.orderByAsc(Catalogue::getCreateTime);
-        return this.list(queryWrapper);
+        return this.lambdaQuery()
+                .eq(Catalogue::getTaskId, taskId)
+                .list();
     }
 
     /**
@@ -187,52 +154,97 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
      */
     @Override
     public List<CatalogueListVo> getCatalogueTreeByTaskId(String taskId) {
-        LambdaQueryWrapper<Catalogue> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Catalogue::getTaskId, taskId);
-        queryWrapper.orderByAsc(Catalogue::getCreateTime);
-        List<Catalogue> catalogueList = this.list(queryWrapper);
-        return buildCatalogueTree(catalogueList);
+        List<Catalogue> catalogues = getCatalogueByTaskId(taskId);
+        if (catalogues.isEmpty()) {
+            return List.of();
+        }
+
+        // 找到根节点（没有parentCatalogueId的节点）
+        List<CatalogueListVo> rootNodes = catalogues.stream()
+                .filter(catalogue -> !StringUtils.hasText(catalogue.getParentCatalogueId()))
+                .map(this::convertToCatalogueListVo)
+                .collect(Collectors.toList());
+
+        // 为每个根节点构建子树
+        rootNodes.forEach(rootNode -> buildCatalogueTree(rootNode, catalogues));
+
+        return rootNodes;
     }
 
     /**
      * 构建目录树形结构
      */
-    private List<CatalogueListVo> buildCatalogueTree(List<Catalogue> catalogueList) {
-        //转换为VO
-        List<CatalogueListVo> allNodes = catalogueList.stream()
+    private void buildCatalogueTree(CatalogueListVo parentNode, List<Catalogue> allCatalogues) {
+        List<CatalogueListVo> children = allCatalogues.stream()
+                .filter(catalogue -> parentNode.getCatalogueId().equals(catalogue.getParentCatalogueId()))
                 .map(this::convertToCatalogueListVo)
-                .toList();
-
-        //构建父子关系映射
-        Map<String, List<CatalogueListVo>> parentChildMap = allNodes.stream()
-                .filter(vo -> StringUtils.isNotEmpty(vo.getParentCatalogueId()))
-                .collect(Collectors.groupingBy(CatalogueListVo::getParentCatalogueId));
-
-        // 设置子节点
-        allNodes.forEach(node -> {
-            List<CatalogueListVo> children = parentChildMap.get(node.getCatalogueId());
-            node.setChildren(children != null ? children : new ArrayList<>());
-        });
-
-        // 返回根节点（没有父节点的节点）
-        return allNodes.stream()
-                .filter((vo -> StringUtils.isEmpty(vo.getParentCatalogueId())))
                 .collect(Collectors.toList());
+
+        if (!children.isEmpty()) {
+            parentNode.setChildren(children);
+            // 递归构建子节点的子树
+            children.forEach(child -> buildCatalogueTree(child, allCatalogues));
+        }
     }
 
     /**
      * 将Catalogue实体转换为CatalogueListVo
      */
     private CatalogueListVo convertToCatalogueListVo(Catalogue catalogue) {
-        return CatalogueListVo.builder()
-                .catalogueId(catalogue.getCatalogueId())
-                .parentCatalogueId(catalogue.getParentCatalogueId())
-                .name(catalogue.getName())
-                .title(catalogue.getTitle())
-                .prompt(catalogue.getPrompt())
-                .dependentFile(catalogue.getDependentFile())
-                .content(catalogue.getContent())
-                .status(catalogue.getStatus())
-                .build();
+        CatalogueListVo vo = new CatalogueListVo();
+        vo.setCatalogueId(catalogue.getCatalogueId());
+        vo.setParentCatalogueId(catalogue.getParentCatalogueId());
+        vo.setName(catalogue.getName());
+        vo.setTitle(catalogue.getTitle());
+        vo.setPrompt(catalogue.getPrompt());
+        vo.setDependentFile(catalogue.getDependentFile());
+        vo.setContent(catalogue.getContent());
+        vo.setStatus(catalogue.getStatus());
+        return vo;
+    }
+    
+    /**
+     * 异步索引目录列表到Mem0记忆系统
+     */
+    private void indexCataloguesToMemoryAsync(GenCatalogueDTO genCatalogueDTO, String localPath) {
+        if (memoryIntegrationService.isMemoryServiceAvailable()) {
+            String taskId = genCatalogueDTO.getCatalogueList().get(0).getTaskId();
+            
+            log.info("开始异步索引目录到Mem0记忆系统: taskId={}", taskId);
+            
+            memoryIntegrationService.indexProjectToMemoryAsync(
+                taskId,
+                genCatalogueDTO.getCatalogueList(),
+                localPath
+            ).whenComplete((result, throwable) -> {
+                if (throwable != null) {
+                    log.error("索引目录到Mem0失败: taskId={}", taskId, throwable);
+                } else {
+                    log.info("索引目录到Mem0完成: taskId={}", taskId);
+                }
+            });
+        } else {
+            log.debug("Mem0记忆服务不可用，跳过索引");
+        }
+    }
+    
+    /**
+     * 异步索引单个目录到Mem0记忆系统
+     */
+    private void indexSingleCatalogueToMemoryAsync(Catalogue catalogue) {
+        if (memoryIntegrationService.isMemoryServiceAvailable()) {
+            log.debug("异步索引单个目录到Mem0: catalogueName={}", catalogue.getName());
+            
+            memoryIntegrationService.indexDocumentToMemoryAsync(
+                catalogue.getTaskId(),
+                catalogue
+            ).whenComplete((result, throwable) -> {
+                if (throwable != null) {
+                    log.warn("索引单个目录到Mem0失败: catalogueName={}", catalogue.getName(), throwable);
+                } else {
+                    log.debug("索引单个目录到Mem0完成: catalogueName={}", catalogue.getName());
+                }
+            });
+        }
     }
 }
