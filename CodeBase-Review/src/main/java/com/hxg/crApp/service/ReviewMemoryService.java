@@ -1,10 +1,12 @@
 package com.hxg.crApp.service;
 
-import com.alibaba.example.chatmemory.service.CodeReviewMemoryService;
+import com.hxg.crApp.client.MemoryServiceClient;
+import com.hxg.crApp.dto.CodeReviewContextRequest;
+import com.hxg.crApp.dto.ContentTypeSearchRequest;
+import com.hxg.crApp.dto.MemorySearchResultDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -14,17 +16,17 @@ import java.util.stream.Collectors;
 /**
  * Review模块的记忆服务
  * 专门处理PR代码评审的上下文检索
+ * 通过Feign客户端调用Memory模块的REST API
  * 
  * @author AI Assistant
  */
 @Service
-@ConditionalOnClass(CodeReviewMemoryService.class)
 public class ReviewMemoryService {
     
     private static final Logger logger = LoggerFactory.getLogger(ReviewMemoryService.class);
     
-    @Autowired(required = false)
-    private CodeReviewMemoryService codeReviewMemoryService;
+    @Autowired
+    private MemoryServiceClient memoryServiceClient;
     
     /**
      * 为PR代码评审搜索相关上下文
@@ -45,14 +47,13 @@ public class ReviewMemoryService {
         logger.info("开始为代码评审搜索上下文: repositoryId={}", repositoryId);
         
         try {
-            if (codeReviewMemoryService != null) {
-                // 调用实际的CodeReviewMemoryService
-                return codeReviewMemoryService.searchContextForCodeReview(
-                    repositoryId, diffContent, prTitle, prDescription, changedFiles);
-            } else {
-                logger.warn("CodeReviewMemoryService不可用，使用模拟上下文");
-                return buildMockContextResponse(repositoryId, prTitle, diffContent);
-            }
+            CodeReviewContextRequest request = new CodeReviewContextRequest(
+                repositoryId, diffContent, prTitle, prDescription, changedFiles);
+            
+            String context = memoryServiceClient.searchContextForCodeReview(request);
+            
+            logger.info("代码评审上下文搜索完成: repositoryId={}", repositoryId);
+            return context;
             
         } catch (Exception e) {
             logger.error("搜索代码评审上下文失败: repositoryId={}", repositoryId, e);
@@ -78,19 +79,13 @@ public class ReviewMemoryService {
             repositoryId, contentType, query);
         
         try {
-            if (codeReviewMemoryService != null) {
-                // 调用实际的CodeReviewMemoryService并转换结果
-                List<CodeReviewMemoryService.MemorySearchResult> results = 
-                    codeReviewMemoryService.searchByContentType(repositoryId, query, contentType, limit);
-                
-                return results.stream()
-                    .map(this::convertToSearchResult)
-                    .collect(Collectors.toList());
-            } else {
-                logger.debug("CodeReviewMemoryService不可用，返回空结果");
-                return List.of();
-            }
+            ContentTypeSearchRequest request = new ContentTypeSearchRequest(repositoryId, query, contentType, limit);
+            MemorySearchResultDto.SearchResponse response = memoryServiceClient.searchByContentType(request);
             
+            return response.getResults().stream()
+                .map(this::convertToSearchResult)
+                .collect(Collectors.toList());
+                
         } catch (Exception e) {
             logger.error("按内容类型搜索失败: repositoryId={}, contentType={}", repositoryId, contentType, e);
             return List.of();
@@ -104,16 +99,13 @@ public class ReviewMemoryService {
         logger.debug("搜索相关文档: repositoryId={}, query={}", repositoryId, query);
         
         try {
-            if (codeReviewMemoryService != null) {
-                List<CodeReviewMemoryService.MemorySearchResult> results = 
-                    codeReviewMemoryService.searchRelatedDocuments(repositoryId, query, limit);
+            ContentTypeSearchRequest request = new ContentTypeSearchRequest(repositoryId, query, "document", limit);
+            MemorySearchResultDto.SearchResponse response = memoryServiceClient.searchRelatedDocuments(request);
+            
+            return response.getResults().stream()
+                .map(this::convertToSearchResult)
+                .collect(Collectors.toList());
                 
-                return results.stream()
-                    .map(this::convertToSearchResult)
-                    .collect(Collectors.toList());
-            } else {
-                return List.of();
-            }
         } catch (Exception e) {
             logger.error("搜索相关文档失败: repositoryId={}", repositoryId, e);
             return List.of();
@@ -127,16 +119,13 @@ public class ReviewMemoryService {
         logger.debug("搜索相关代码文件: repositoryId={}, query={}", repositoryId, query);
         
         try {
-            if (codeReviewMemoryService != null) {
-                List<CodeReviewMemoryService.MemorySearchResult> results = 
-                    codeReviewMemoryService.searchRelatedCodeFiles(repositoryId, query, limit);
+            ContentTypeSearchRequest request = new ContentTypeSearchRequest(repositoryId, query, "code_file", limit);
+            MemorySearchResultDto.SearchResponse response = memoryServiceClient.searchRelatedCodeFiles(request);
+            
+            return response.getResults().stream()
+                .map(this::convertToSearchResult)
+                .collect(Collectors.toList());
                 
-                return results.stream()
-                    .map(this::convertToSearchResult)
-                    .collect(Collectors.toList());
-            } else {
-                return List.of();
-            }
         } catch (Exception e) {
             logger.error("搜索相关代码文件失败: repositoryId={}", repositoryId, e);
             return List.of();
@@ -147,15 +136,21 @@ public class ReviewMemoryService {
      * 检查记忆服务是否可用
      */
     public boolean isMemoryServiceAvailable() {
-        boolean available = codeReviewMemoryService != null;
-        logger.debug("记忆服务可用性检查: {}", available);
-        return available;
+        try {
+            String result = memoryServiceClient.healthCheck();
+            boolean available = result != null && !result.contains("Unavailable");
+            logger.debug("记忆服务可用性检查: {}", available);
+            return available;
+        } catch (Exception e) {
+            logger.debug("记忆服务健康检查失败: {}", e.getMessage());
+            return false;
+        }
     }
     
     /**
      * 转换搜索结果格式
      */
-    private SearchResult convertToSearchResult(CodeReviewMemoryService.MemorySearchResult memoryResult) {
+    private SearchResult convertToSearchResult(MemorySearchResultDto memoryResult) {
         SearchResult result = new SearchResult();
         result.setId(memoryResult.getId());
         result.setContent(memoryResult.getContent());
@@ -164,55 +159,6 @@ public class ReviewMemoryService {
         result.setName(memoryResult.getName());
         result.setMetadata(memoryResult.getMetadata());
         return result;
-    }
-    
-    /**
-     * 构建模拟的上下文响应
-     */
-    private String buildMockContextResponse(String repositoryId, String prTitle, String diffContent) {
-        StringBuilder context = new StringBuilder();
-        context.append("=== 相关项目上下文信息 (模拟模式) ===\n\n");
-        
-        // 分析PR标题和内容
-        if (prTitle != null && !prTitle.isEmpty()) {
-            context.append("📋 **PR主题**: ").append(prTitle).append("\n\n");
-        }
-        
-        // 分析代码变更
-        if (diffContent != null && !diffContent.isEmpty()) {
-            String[] lines = diffContent.split("\n");
-            int addedLines = 0;
-            int removedLines = 0;
-            
-            for (String line : lines) {
-                if (line.startsWith("+") && !line.startsWith("+++")) {
-                    addedLines++;
-                } else if (line.startsWith("-") && !line.startsWith("---")) {
-                    removedLines++;
-                }
-            }
-            
-            context.append("📊 **变更统计**: ").append("+").append(addedLines)
-                   .append(" -").append(removedLines).append(" 行\n\n");
-        }
-        
-        // 模拟相关文档
-        context.append("📄 **相关文档**:\n");
-        context.append("- 项目架构文档: 描述了系统的整体设计和模块划分\n");
-        context.append("- 编码规范: 定义了代码风格和最佳实践\n");
-        context.append("- API设计指南: 说明了接口设计原则\n\n");
-        
-        // 模拟相关代码
-        context.append("💻 **相关代码文件**:\n");
-        context.append("- 核心服务类: 包含主要业务逻辑实现\n");
-        context.append("- 配置文件: 系统配置和依赖管理\n");
-        context.append("- 测试用例: 相关功能的单元测试\n\n");
-        
-        context.append("⚠️ **注意**: 当前为模拟模式，请启用Mem0服务获取真实上下文\n");
-        context.append("🏷️ **仓库**: ").append(repositoryId).append("\n");
-        context.append("=== 上下文信息结束 ===\n\n");
-        
-        return context.toString();
     }
     
     /**

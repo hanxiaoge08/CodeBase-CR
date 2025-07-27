@@ -1,12 +1,14 @@
 package com.hxg.service.impl;
 
-import com.alibaba.example.chatmemory.service.DocumentMemoryService;
+import com.hxg.client.MemoryServiceClient;
+import com.hxg.dto.BatchDocumentRequest;
+import com.hxg.dto.CodeFileRequest;
+import com.hxg.dto.DocumentRequest;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.service.IMemoryIntegrationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -22,17 +24,17 @@ import java.util.stream.Stream;
 /**
  * 记忆集成服务实现
  * 负责将Wiki生成的文档和代码文件索引到Mem0记忆系统
+ * 通过Feign客户端调用Memory模块的REST API
  * 
  * @author AI Assistant
  */
 @Service
-@ConditionalOnClass(DocumentMemoryService.class)
 public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     
     private static final Logger logger = LoggerFactory.getLogger(MemoryIntegrationServiceImpl.class);
     
-    @Autowired(required = false)
-    private DocumentMemoryService documentMemoryService;
+    @Autowired
+    private MemoryServiceClient memoryServiceClient;
     
     // 支持的代码文件扩展名
     private static final Set<String> CODE_EXTENSIONS = Set.of(
@@ -49,25 +51,20 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                                                             List<Catalogue> catalogues, 
                                                             String projectPath) {
         
-        if (documentMemoryService == null) {
-            logger.warn("DocumentMemoryService不可用，跳过记忆索引: taskId={}", taskId);
-            return CompletableFuture.completedFuture(null);
-        }
-        
         return CompletableFuture.runAsync(() -> {
             try {
                 logger.info("开始项目记忆索引: taskId={}, catalogueCount={}, projectPath={}", 
                     taskId, catalogues.size(), projectPath);
                 
                 // 索引生成的文档内容
-                List<DocumentMemoryService.DocumentInfo> documents = new ArrayList<>();
+                List<BatchDocumentRequest.DocumentInfo> documents = new ArrayList<>();
                 
                 for (Catalogue catalogue : catalogues) {
                     if (StringUtils.hasText(catalogue.getContent())) {
                         String documentUrl = generateDocumentUrl(catalogue);
                         Map<String, Object> metadata = createCatalogueMetadata(catalogue, taskId);
                         
-                        DocumentMemoryService.DocumentInfo docInfo = new DocumentMemoryService.DocumentInfo(
+                        BatchDocumentRequest.DocumentInfo docInfo = new BatchDocumentRequest.DocumentInfo(
                             catalogue.getName(),
                             catalogue.getContent(),
                             documentUrl,
@@ -79,11 +76,13 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 
                 // 批量索引文档
                 if (!documents.isEmpty()) {
-                    documentMemoryService.batchAddDocumentMemoriesAsync(taskId, documents)
-                        .exceptionally(ex -> {
-                            logger.error("批量索引文档失败: taskId={}", taskId, ex);
-                            return null;
-                        });
+                    try {
+                        BatchDocumentRequest batchRequest = new BatchDocumentRequest(taskId, documents);
+                        memoryServiceClient.batchAddDocuments(batchRequest);
+                        logger.info("批量文档索引完成: taskId={}, 文档数量={}", taskId, documents.size());
+                    } catch (Exception ex) {
+                        logger.error("批量索引文档失败: taskId={}", taskId, ex);
+                    }
                 }
                 
                 // 并行索引代码文件
@@ -104,11 +103,6 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     @Override
     public CompletableFuture<Void> indexDocumentToMemoryAsync(String taskId, Catalogue catalogue) {
         
-        if (documentMemoryService == null) {
-            logger.debug("DocumentMemoryService不可用，跳过文档记忆索引: taskId={}", taskId);
-            return CompletableFuture.completedFuture(null);
-        }
-        
         if (!StringUtils.hasText(catalogue.getContent())) {
             logger.debug("文档内容为空，跳过索引: taskId={}, catalogueName={}", taskId, catalogue.getName());
             return CompletableFuture.completedFuture(null);
@@ -121,16 +115,15 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 String documentUrl = generateDocumentUrl(catalogue);
                 Map<String, Object> metadata = createCatalogueMetadata(catalogue, taskId);
                 
-                documentMemoryService.addDocumentMemoryAsync(
+                DocumentRequest request = new DocumentRequest(
                     taskId,
                     catalogue.getName(),
                     catalogue.getContent(),
                     documentUrl,
                     metadata
-                ).exceptionally(ex -> {
-                    logger.error("单个文档索引失败: taskId={}, catalogueName={}", taskId, catalogue.getName(), ex);
-                    return null;
-                });
+                );
+                
+                memoryServiceClient.addDocument(request);
                 
                 logger.debug("单个文档记忆索引完成: taskId={}, catalogueName={}", taskId, catalogue.getName());
                 
@@ -142,11 +135,6 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     
     @Override
     public CompletableFuture<Void> indexCodeFilesToMemoryAsync(String taskId, String projectPath) {
-        
-        if (documentMemoryService == null) {
-            logger.info("DocumentMemoryService不可用，跳过代码文件记忆索引: taskId={}", taskId);
-            return CompletableFuture.completedFuture(null);
-        }
         
         return CompletableFuture.runAsync(() -> {
             try {
@@ -184,7 +172,13 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     
     @Override
     public boolean isMemoryServiceAvailable() {
-        return documentMemoryService != null;
+        try {
+            String result = memoryServiceClient.healthCheck();
+            return result != null && !result.contains("Unavailable");
+        } catch (Exception e) {
+            logger.debug("Memory服务健康检查失败: {}", e.getMessage());
+            return false;
+        }
     }
     
     /**
@@ -248,22 +242,24 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
             String fileName = codeFile.getFileName().toString();
             String fileExtension = getFileExtension(fileName);
             
-            // 异步索引
-            documentMemoryService.addCodeFileMemoryAsync(
+            // 创建请求并调用Feign客户端
+            CodeFileRequest request = new CodeFileRequest(
                 taskId,
                 fileName,
                 relativePath,
                 content,
                 fileExtension
-            ).exceptionally(ex -> {
-                logger.error("代码文件索引失败: {}", relativePath, ex);
-                return null;
-            });
+            );
+            
+            memoryServiceClient.addCodeFile(request);
             
             return true;
             
         } catch (IOException e) {
             logger.error("读取代码文件失败: {}", codeFile, e);
+            return false;
+        } catch (Exception e) {
+            logger.error("索引代码文件失败: {}", codeFile, e);
             return false;
         }
     }

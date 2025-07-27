@@ -24,6 +24,19 @@ spring:
       mode: always
       continue-on-error: true
 
+# MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.hxg.model.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
 # 日志输出配置
 logging:
   level:
@@ -33,3 +46,21 @@ logging:
       boot: error
   file:
     name: ./logs/codebasewiki.log
+
+# Memory服务配置
+memory:
+  service:
+    url: http://localhost:8080
+
+# Feign配置
+feign:
+  client:
+    config:
+      memory-service:
+        connectTimeout: 5000
+        readTimeout: 10000
+        loggerLevel: basic
+  hystrix:
+    enabled: false
+  circuitbreaker:
+    enabled: false

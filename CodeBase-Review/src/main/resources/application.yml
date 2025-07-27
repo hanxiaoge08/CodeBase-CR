@@ -9,6 +9,11 @@ spring:
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
+  datasource:
+    url: jdbc:sqlite:data/codebasewiki_db.sqlite
+    driver-class-name: org.sqlite.JDBC
+    username: test
+    password: test
     
     # 向量数据库配置 (Chroma)
 #    vectorstore:
@@ -55,4 +60,22 @@ task:
       max-size: 5
       queue-capacity: 100
       keep-alive: 60s
+
+# Memory服务配置
+memory:
+  service:
+    url: http://localhost:8080
+
+# Feign配置
+feign:
+  client:
+    config:
+      memory-service:
+        connectTimeout: 5000
+        readTimeout: 10000
+        loggerLevel: basic
+  hystrix:
+    enabled: false
+  circuitbreaker:
+    enabled: false
 

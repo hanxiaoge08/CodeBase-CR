@@ -28,6 +28,10 @@
 
         <!-- Spring Boot -->
         <spring-boot.version>3.4.5</spring-boot.version>
+        
+        <!-- Spring Cloud -->
+        <spring-cloud.version>2024.0.1</spring-cloud.version>
+        
         <es.version>8.17.4</es.version>
         <jedis.version>5.2.0</jedis.version>
         <mysql.version>8.0.32</mysql.version>
@@ -60,6 +64,13 @@
                 <groupId>com.alibaba.cloud.ai</groupId>
                 <artifactId>spring-ai-alibaba-bom</artifactId>
                 <version>${spring-ai-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
