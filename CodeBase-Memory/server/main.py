@@ -196,7 +196,7 @@ def search_memories(search_req: SearchRequest):
 def update_memory(memory_id: str, updated_memory: Dict[str, Any]):
     """Update an existing memory."""
     try:
-        return MEMORY_INSTANCE.update(memory_id=memory_id, data=updated_memory)
+        return MEMORY_INSTANCE.update(memory_id=memory_id, data=updated_memory.get("memory"))
     except Exception as e:
         logging.exception("Error in update_memory:")
         raise HTTPException(status_code=500, detail=str(e))
