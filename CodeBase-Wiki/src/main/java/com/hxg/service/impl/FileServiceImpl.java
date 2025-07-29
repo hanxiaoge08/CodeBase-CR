@@ -3,6 +3,7 @@ package com.hxg.service.impl;
 import com.hxg.service.IFileService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,6 +24,9 @@ import java.util.zip.ZipInputStream;
 @Slf4j
 @Service
 public class FileServiceImpl implements IFileService {
+    
+    @Value("${project.repository.base-path:./repository}")
+    private String repositoryBasePath;
     @Override
     public String getFileTree(String localPath) {
         //1.读取gitignore文件
@@ -51,7 +55,7 @@ public class FileServiceImpl implements IFileService {
     @Override
     public String unzipToProjectDir(MultipartFile file, String userName, String projectName) {
         log.info("开始解压文件，文件名：{}，大小：{} bytes", file.getOriginalFilename(), file.getSize());
-        String baseDir = System.getProperty("user.dir") + File.separator + "repository";
+        String baseDir = getAbsoluteRepositoryPath();
         String destDir = baseDir + File.separator + userName + File.separator + projectName;
         log.info("解压目录：{}", destDir);
 
@@ -95,7 +99,7 @@ public class FileServiceImpl implements IFileService {
 
     @Override
     public String getRepositoryPath(String userName, String projectName) {
-        String baseDir = System.getProperty("user.dir") + File.separator + "repository";
+        String baseDir = getAbsoluteRepositoryPath();
         String localPath = baseDir + File.separator + userName + File.separator + projectName;
         File baseDirFile = new File(baseDir);
         if (!baseDirFile.exists()) {
@@ -125,7 +129,7 @@ public class FileServiceImpl implements IFileService {
             log.warn("无法删除项目目录，用户名或项目名为空");
             return;
         }
-        String baseDir = System.getProperty("user.dir") + File.separator + "repository";
+        String baseDir = getAbsoluteRepositoryPath();
         String projectPath = baseDir + File.separator + userName + File.separator + projectName;
         File projectDir = new File(projectPath);
 
@@ -142,6 +146,20 @@ public class FileServiceImpl implements IFileService {
             log.info("项目目录{}不存在,无需删除", projectPath);
         }
 
+    }
+    
+    /**
+     * 获取仓库存储的绝对路径
+     * 支持相对路径和绝对路径配置
+     */
+    private String getAbsoluteRepositoryPath() {
+        File repoPath = new File(repositoryBasePath);
+        if (repoPath.isAbsolute()) {
+            return repositoryBasePath;
+        } else {
+            // 相对路径，相对于工作目录
+            return System.getProperty("user.dir") + File.separator + repositoryBasePath;
+        }
     }
 
     /**

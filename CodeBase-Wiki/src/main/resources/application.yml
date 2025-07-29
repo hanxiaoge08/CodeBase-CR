@@ -64,3 +64,9 @@ feign:
     enabled: false
   circuitbreaker:
     enabled: false
+
+# 项目配置
+project:
+  repository:
+    # Git仓库克隆根目录
+    base-path: ${PROJECT_REPO_PATH:C:\Code\repository}

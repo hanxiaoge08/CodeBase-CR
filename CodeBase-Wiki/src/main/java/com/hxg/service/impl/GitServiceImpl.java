@@ -22,10 +22,12 @@ public class GitServiceImpl implements IGitService {
     public String cloneRepository(CreateTaskParams createTaskParams, String localPath) {
         CloneCommand cloneCommand = Git.cloneRepository()
                 .setURI(createTaskParams.getProjectUrl())
-                .setDirectory(new File(localPath))
-                .setCredentialsProvider(new UsernamePasswordCredentialsProvider(createTaskParams.getUserName(), createTaskParams.getPassword()));
+                .setDirectory(new File(localPath));
         if (createTaskParams.getBranch() != null && !createTaskParams.getBranch().isEmpty()) {
             cloneCommand.setBranch(createTaskParams.getBranch());
+        }
+        if(createTaskParams.getUserName()!=null&&!createTaskParams.getUserName().isEmpty()){
+            cloneCommand.setCredentialsProvider(new UsernamePasswordCredentialsProvider(createTaskParams.getUserName(), createTaskParams.getPassword()));
         }
         try {
             cloneCommand.call().close();
