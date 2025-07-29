@@ -1,8 +1,8 @@
 package com.hxg.client;
 
-import com.hxg.dto.BatchDocumentRequest;
-import com.hxg.dto.CodeFileRequest;
-import com.hxg.dto.DocumentRequest;
+import com.hxg.model.dto.BatchDocumentRequest;
+import com.hxg.model.dto.CodeFileRequest;
+import com.hxg.model.dto.DocumentRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

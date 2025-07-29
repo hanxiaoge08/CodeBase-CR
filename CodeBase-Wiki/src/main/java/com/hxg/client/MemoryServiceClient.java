@@ -1,8 +1,8 @@
 package com.hxg.client;
 
-import com.hxg.dto.BatchDocumentRequest;
-import com.hxg.dto.CodeFileRequest;
-import com.hxg.dto.DocumentRequest;
+import com.hxg.model.dto.BatchDocumentRequest;
+import com.hxg.model.dto.CodeFileRequest;
+import com.hxg.model.dto.DocumentRequest;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;

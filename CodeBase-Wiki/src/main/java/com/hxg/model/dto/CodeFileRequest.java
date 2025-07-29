@@ -1,4 +1,4 @@
-package com.hxg.dto;
+package com.hxg.model.dto;
 
 /**
  * 代码文件记忆请求DTO

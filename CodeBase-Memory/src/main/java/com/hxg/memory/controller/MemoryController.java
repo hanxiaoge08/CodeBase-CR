@@ -49,7 +49,7 @@ public class MemoryController {
     public ResponseEntity<String> addMemory(@RequestBody AddMemoryRequest request) {
         
         try {
-            logger.info("添加记忆: userId={}, messageCount={}", 
+            logger.info("添加记忆: memoryId={}, messageCount={}", 
                 request.getUserId(), request.getMessages().size());
             
             // 构建记忆请求
@@ -62,12 +62,12 @@ public class MemoryController {
             // 添加到Mem0
             memZeroServiceClient.addMemory(memoryCreate);
             
-            logger.info("记忆添加成功: userId={}", request.getUserId());
+            logger.info("记忆添加成功: memoryId={}", request.getUserId());
             
             return ResponseEntity.ok("记忆添加成功");
             
         } catch (Exception e) {
-            logger.error("添加记忆失败: userId={}", request.getUserId(), e);
+            logger.error("添加记忆失败: memoryId={}", request.getUserId(), e);
             return ResponseEntity.internalServerError().body("添加记忆失败: " + e.getMessage());
         }
     }
@@ -79,7 +79,7 @@ public class MemoryController {
     public ResponseEntity<MemZeroServerResp> searchMemories(@RequestBody SearchMemoryRequest request) {
         
         try {
-            logger.info("搜索记忆: userId={}, query={}", request.getUserId(), request.getQuery());
+            logger.info("搜索记忆: memoryId={}, query={}", request.getUserId(), request.getQuery());
             
             // 构建搜索请求
             MemZeroServerRequest.SearchRequest searchRequest = MemZeroServerRequest.SearchRequest.builder()
@@ -91,13 +91,13 @@ public class MemoryController {
             // 执行搜索
             MemZeroServerResp result = memZeroServiceClient.searchMemories(searchRequest);
             
-            logger.info("记忆搜索完成: userId={}, resultCount={}", 
+            logger.info("记忆搜索完成: memoryId={}, resultCount={}", 
                 request.getUserId(), result.getResults() != null ? result.getResults().size() : 0);
             
             return ResponseEntity.ok(result);
             
         } catch (Exception e) {
-            logger.error("搜索记忆失败: userId={}", request.getUserId(), e);
+            logger.error("搜索记忆失败: memoryId={}", request.getUserId(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -106,22 +106,22 @@ public class MemoryController {
      * 获取所有记忆
      */
     @GetMapping("/user/{userId}")
-    public ResponseEntity<MemZeroServerResp> getAllMemories(@PathVariable String userId,
-                                                          @RequestParam(required = false) String runId,
-                                                          @RequestParam(required = false) String agentId) {
+    public ResponseEntity<MemZeroServerResp> getAllMemories(@PathVariable("userId") String userId,
+                                                          @RequestParam(value = "runId", required = false) String runId,
+                                                          @RequestParam(value = "agentId", required = false) String agentId) {
         
         try {
-            logger.info("获取用户所有记忆: userId={}, runId={}, agentId={}", userId, runId, agentId);
+            logger.info("获取用户所有记忆: memoryId={}, runId={}, agentId={}", userId, runId, agentId);
             
             MemZeroServerResp result = memZeroServiceClient.getAllMemories(userId, runId, agentId);
             
-            logger.info("获取记忆完成: userId={}, memoryCount={}", 
+            logger.info("获取记忆完成: memoryId={}, memoryCount={}", 
                 userId, result.getResults() != null ? result.getResults().size() : 0);
             
             return ResponseEntity.ok(result);
             
         } catch (Exception e) {
-            logger.error("获取用户记忆失败: userId={}", userId, e);
+            logger.error("获取用户记忆失败: memoryId={}", userId, e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -130,7 +130,7 @@ public class MemoryController {
      * 获取特定记忆
      */
     @GetMapping("/{memoryId}")
-    public ResponseEntity<MemZeroServerResp> getMemory(@PathVariable String memoryId) {
+    public ResponseEntity<MemZeroServerResp> getMemory(@PathVariable("memoryId") String memoryId) {
         
         try {
             logger.info("获取特定记忆: memoryId={}", memoryId);
@@ -149,13 +149,13 @@ public class MemoryController {
      * 更新记忆
      */
     @PutMapping("/{memoryId}")
-    public ResponseEntity<String> updateMemory(@PathVariable String memoryId, 
+    public ResponseEntity<String> updateMemory(@PathVariable("memoryId") String memoryId, 
                                               @RequestBody UpdateMemoryRequest request) {
         
         try {
-            logger.info("更新记忆: memoryId={}, userId={}", memoryId, request.getUserId());
+            logger.info("更新记忆: memoryId={}, memoryId={}", memoryId, request.getMemoryId());
             
-            Map<String, Object> updateData = Map.of("text", request.getData());
+            Map<String, Object> updateData = Map.of("memory", request.getMemory());
             Map<String, Object> result = memZeroServiceClient.updateMemory(memoryId, updateData);
             
             logger.info("记忆更新成功: memoryId={}", memoryId);
@@ -163,7 +163,7 @@ public class MemoryController {
             return ResponseEntity.ok("记忆更新成功");
             
         } catch (Exception e) {
-            logger.error("更新记忆失败: memoryId={}, userId={}", memoryId, request.getUserId(), e);
+            logger.error("更新记忆失败: memoryId={}, memoryId={}", memoryId, request.getMemoryId(), e);
             return ResponseEntity.internalServerError().body("更新记忆失败: " + e.getMessage());
         }
     }
@@ -221,15 +221,15 @@ public class MemoryController {
      * 更新记忆请求
      */
     public static class UpdateMemoryRequest {
-        private String data;
-        private String userId;
+        private String memory;
+        private String memoryId;
         
         // Getters and Setters
-        public String getData() { return data; }
-        public void setData(String data) { this.data = data; }
+        public String getMemory() { return memory; }
+        public void setMemory(String memory) { this.memory = memory; }
         
-        public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
+        public String getMemoryId() { return memoryId; }
+        public void setMemoryId(String memoryId) { this.memoryId = memoryId; }
     }
     
     // ===============================

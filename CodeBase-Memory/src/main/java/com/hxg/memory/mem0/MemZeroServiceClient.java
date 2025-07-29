@@ -173,7 +173,9 @@ public class MemZeroServiceClient {
                 .block();
             
             if (response != null) {
-                MemZeroServerResp memory = objectMapper.readValue(response, MemZeroServerResp.class);
+                MemZeroServerResp.MemZeroResults memoryResult = objectMapper.readValue(response, MemZeroServerResp.MemZeroResults.class);
+                MemZeroServerResp memory = new MemZeroServerResp();
+                memory.setResults(List.of(memoryResult));
                 logger.info("Retrieved memory: {}", memoryId);
                 return memory;
             }

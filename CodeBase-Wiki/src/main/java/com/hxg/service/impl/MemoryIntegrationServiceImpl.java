@@ -1,9 +1,9 @@
 package com.hxg.service.impl;
 
 import com.hxg.client.MemoryServiceClient;
-import com.hxg.dto.BatchDocumentRequest;
-import com.hxg.dto.CodeFileRequest;
-import com.hxg.dto.DocumentRequest;
+import com.hxg.model.dto.BatchDocumentRequest;
+import com.hxg.model.dto.CodeFileRequest;
+import com.hxg.model.dto.DocumentRequest;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.service.IMemoryIntegrationService;
 import org.slf4j.Logger;
@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

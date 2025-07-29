@@ -1,4 +1,4 @@
-package com.hxg.dto;
+package com.hxg.model.dto;
 
 import java.util.Map;
 

@@ -26,23 +26,23 @@ services:
       - PYTHONUNBUFFERED=1  # Ensures Python output is sent straight to terminal
 
   postgres:
-      image: ankane/pgvector:v0.5.1
-      restart: on-failure
-      shm_size: "128mb" # Increase this if vacuuming fails with a "no space left on device" error
-      networks:
-        - mem0_network
-      environment:
-        - POSTGRES_USER=postgres
-        - POSTGRES_PASSWORD=postgres
-      healthcheck:
-        test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "postgres"]
-        interval: 5s
-        timeout: 5s
-        retries: 5
-      volumes:
-        - postgres_db:/var/lib/postgresql/data
-      ports:
-        - "8432:5432"
+    image: ankane/pgvector:v0.5.1
+    restart: on-failure
+    shm_size: "128mb" # Increase this if vacuuming fails with a "no space left on device" error
+    networks:
+      - mem0_network
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_db:/var/lib/postgresql/data
+    ports:
+      - "8432:5432"
   neo4j:
     image: neo4j:5.26.4
     networks:
