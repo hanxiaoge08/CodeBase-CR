@@ -2,7 +2,11 @@ package com.hxg.service.impl;
 
 import com.hxg.llm.service.LlmService;
 import com.hxg.model.dto.CatalogueStruct;
+import com.hxg.service.ICatalogueService;
+import com.hxg.service.IFileService;
 import com.hxg.service.IMemoryIntegrationService;
+import com.hxg.service.ITaskService;
+import com.hxg.service.async.CatalogueDetailAsyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,12 +30,15 @@ class CatalogueServiceImplTest {
     
     @Mock
     private IMemoryIntegrationService memoryIntegrationService;
+    
+    @Mock
+    private CatalogueDetailAsyncService catalogueDetailAsyncService;
 
-    private CatalogueServiceImpl catalogueService;
+    private ICatalogueService catalogueService;
 
     @BeforeEach
     void setUp() {
-        catalogueService = new CatalogueServiceImpl(llmService,memoryIntegrationService);
+        catalogueService = new CatalogueServiceImpl(llmService, memoryIntegrationService,catalogueDetailAsyncService);
     }
 
     @Test
@@ -143,7 +150,7 @@ class CatalogueServiceImplTest {
         RuntimeException exception = assertThrows(RuntimeException.class, 
             () -> catalogueService.processCatalogueStruct(jsonWithEmptyItems));
 
-        assertTrue(exception.getMessage().contains("LLM生成项目目录结构为空"));
+        assertTrue(exception.getMessage().contains("解析LLM生成的目录结构失败"));
     }
 
     @Test
@@ -156,7 +163,7 @@ class CatalogueServiceImplTest {
         RuntimeException exception = assertThrows(RuntimeException.class, 
             () -> catalogueService.processCatalogueStruct(invalidJson));
 
-        assertTrue(exception.getMessage().contains("LLM生成项目目录结构为空"));
+        assertTrue(exception.getMessage().contains("解析LLM生成的目录结构失败"));
     }
 } 
 //prompt="""

@@ -13,16 +13,19 @@ import com.hxg.model.entity.Catalogue;
 import com.hxg.model.enums.CatalogueStatusEnum;
 import com.hxg.service.ICatalogueService;
 import com.hxg.service.IMemoryIntegrationService;
+import com.hxg.service.async.CatalogueDetailAsyncService;
 import com.hxg.utils.RegexUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import com.hxg.model.vo.CatalogueListVo;
+import org.springframework.util.StringUtils;
 
 /**
  * @author hxg
@@ -34,23 +37,25 @@ import com.hxg.model.vo.CatalogueListVo;
 public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue> implements ICatalogueService {
     private final LlmService llmService;
     private final IMemoryIntegrationService memoryIntegrationService;
+    private final CatalogueDetailAsyncService catalogueDetailAsyncService;
 
-    public CatalogueServiceImpl(LlmService llmService, IMemoryIntegrationService memoryIntegrationService) {
+    public CatalogueServiceImpl(LlmService llmService, 
+                              IMemoryIntegrationService memoryIntegrationService,
+                              CatalogueDetailAsyncService catalogueDetailAsyncService) {
         this.llmService = llmService;
         this.memoryIntegrationService = memoryIntegrationService;
+        this.catalogueDetailAsyncService = catalogueDetailAsyncService;
     }
 
     @Override
     public GenCatalogueDTO generateCatalogue(String fileTree, ExecutionContext context) {
-        //生成项目目录
-        String genCataloguePrompt= AnalyzeCataloguePrompt.prompt
+        String genCataloguePrompt= AnalyzeCataloguePrompt.promptV2
                 .replace("{{$code_files}}",fileTree)
                 .replace("{{$repository_location}}",context.getLocalPath());
-        log.info("LLM开始生成项目目录，prompt内容：{}",genCataloguePrompt);
+        log.info("LLM开始生成项目目录");
         String result=llmService.callWithTools(genCataloguePrompt);
-        log.info("LLM生成项目目录结果：{}",result);
+        log.info("LLM生成项目目录完成");
         
-        //String documentationStructure= RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
         CatalogueStruct catalogueStruct = processCatalogueStruct(result);
         List<Catalogue> catalogueList = saveCatalogueStruct(context, catalogueStruct);
         return new GenCatalogueDTO(catalogueStruct,catalogueList);
@@ -58,23 +63,40 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public CatalogueStruct processCatalogueStruct(String result) {
-        String documentationStructure=result;
+        String documentationStructure = result;
+        
+        // 处理XML标签格式的返回
         if(result.startsWith("<documentation_structure>")){
             documentationStructure = RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
         }
         
         try{
-            CatalogueStruct catalogueStruct=JSON.parseObject(documentationStructure, CatalogueStruct.class);
-            if (catalogueStruct == null || catalogueStruct.getItems().isEmpty()) {
-                log.error("LLM生成项目目录结构为空");
-                throw new Exception("LLM生成项目目录结构为空");
+            // 首先尝试直接解析为CatalogueStruct
+            CatalogueStruct catalogueStruct = JSON.parseObject(documentationStructure, CatalogueStruct.class);
+            
+            // 如果直接解析失败或items为空，尝试从documentation_structure字段中提取
+            if (catalogueStruct == null || catalogueStruct.getItems() == null || catalogueStruct.getItems().isEmpty()) {
+                log.debug("直接解析失败，尝试从documentation_structure字段提取");
+                
+                // 尝试解析包含documentation_structure字段的JSON
+                com.alibaba.fastjson2.JSONObject jsonObject = JSON.parseObject(documentationStructure);
+                if (jsonObject.containsKey("documentation_structure")) {
+                    catalogueStruct = jsonObject.getObject("documentation_structure", CatalogueStruct.class);
+                }
             }
-            log.info("LLM生成项目目录结构内容：{}",documentationStructure);
+            
+            if (catalogueStruct == null || catalogueStruct.getItems() == null || catalogueStruct.getItems().isEmpty()) {
+                log.error("LLM生成项目目录结构为空或无效，原始内容：{}", documentationStructure);
+                throw new RuntimeException("LLM生成项目目录结构为空或无效");
+            }
+            
+            log.info("LLM生成项目目录结构解析成功，items数量：{}", catalogueStruct.getItems().size());
             return catalogueStruct;
-        }catch (Exception e){
-            throw new RuntimeException("LLM生成项目目录结构为空");
+            
+        } catch (Exception e) {
+            log.error("解析LLM生成的目录结构时发生错误，原始内容：{}", documentationStructure, e);
+            throw new RuntimeException("解析LLM生成的目录结构失败: " + e.getMessage(), e);
         }
-        
     }
 
     @Override
@@ -100,50 +122,24 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath) {
-        genCatalogueDTO.getCatalogueList().forEach(catalogue -> {
-            if(StringUtils.hasText(catalogue.getParentCatalogueId())){
-                generateCatalogueDetail(catalogue,fileTree,genCatalogueDTO.getCatalogueStruct(),localPath);
-            }
-        });
-        
-        // 文档生成完成后，异步索引到Mem0记忆系统
-        indexCataloguesToMemoryAsync(genCatalogueDTO, localPath);
-    }
-
-    @Override
-    @Async("GenCatalogueDetailExecutor")
-    public void generateCatalogueDetail(Catalogue catalogue, String fileTree, CatalogueStruct catalogueStruct, String localPath) {
-        try{
-            log.info("LLM开始生成目录详情：{}", catalogue.getName());
-            String prompt= GenDocPrompt.prompt
-                    .replace("{{repository_location}}",localPath)
-                    .replace("{{prompt}}",catalogue.getPrompt())
-                    .replace("{{title}}",catalogue.getName())
-                    .replace("{{$repository_files}}",fileTree)
-                    .replace("{{$catalogue}}",JSON.toJSONString(catalogueStruct));
-            String result=llmService.callWithTools(prompt);
-            log.info("LLM生成{}目录详情结果：{}",catalogue.getName(),result);
-            if(StringUtils.isEmpty(result)){
-                throw new RuntimeException("LLM生成目录详情结果为空");
-            }
-            //保存目录详情
-            catalogue.setContent(result);
-            catalogue.setStatus(CatalogueStatusEnum.COMPLETED.getCode());
-        }catch (Exception e){
-            log.error("LLM生成{}目录详情失败",catalogue.getName(),e);
-            catalogue.setStatus(CatalogueStatusEnum.FAILED.getCode());
-            catalogue.setFailReason(e.getMessage());
-        }finally {
-            this.updateById(catalogue);
-            
-            // 单个文档生成完成后，尝试索引到Mem0
-            if (catalogue.getStatus() != null && 
-                catalogue.getStatus().equals(CatalogueStatusEnum.COMPLETED.getCode()) &&
-                StringUtils.hasText(catalogue.getContent())) {
+        // 过滤出需要生成详细内容的目录
+        // 当前逻辑：处理所有目录，因为它们都需要生成详细的文档内容
+        List<Catalogue> cataloguesToProcess = genCatalogueDTO.getCatalogueList().stream()
+                .filter(catalogue -> catalogue != null && StringUtils.hasText(catalogue.getName()))
+                .collect(Collectors.toList());
                 
-                indexSingleCatalogueToMemoryAsync(catalogue);
-            }
+        log.info("开始并行生成目录详情，总数={}", 
+                genCatalogueDTO.getCatalogueList().size());
+        
+        for (Catalogue catalogue : cataloguesToProcess) {
+            // 缓存项目路径以避免循环依赖
+            catalogueDetailAsyncService.cacheTaskProjectPath(catalogue.getTaskId(), localPath);
+            
+            // 调用独立的异步服务
+            catalogueDetailAsyncService.generateCatalogueDetail(catalogue, fileTree, genCatalogueDTO.getCatalogueStruct(), localPath);
         }
+        
+        log.info("所有目录详情生成任务已启动");
     }
 
     @Override
@@ -215,37 +211,13 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
     }
     
     /**
-     * 异步索引目录列表到Mem0记忆系统
-     */
-    private void indexCataloguesToMemoryAsync(GenCatalogueDTO genCatalogueDTO, String localPath) {
-        if (memoryIntegrationService.isMemoryServiceAvailable()) {
-            String taskId = genCatalogueDTO.getCatalogueList().get(0).getTaskId();
-            
-            log.info("开始异步索引目录到Mem0记忆系统: taskId={}", taskId);
-            
-            memoryIntegrationService.indexProjectToMemoryAsync(
-                taskId,
-                genCatalogueDTO.getCatalogueList(),
-                localPath
-            ).whenComplete((result, throwable) -> {
-                if (throwable != null) {
-                    log.error("索引目录到Mem0失败: taskId={}", taskId, throwable);
-                } else {
-                    log.info("索引目录到Mem0完成: taskId={}", taskId);
-                }
-            });
-        } else {
-            log.debug("Mem0记忆服务不可用，跳过索引");
-        }
-    }
-    
-    /**
      * 异步索引单个目录到Mem0记忆系统
      */
     private void indexSingleCatalogueToMemoryAsync(Catalogue catalogue) {
         if (memoryIntegrationService.isMemoryServiceAvailable()) {
             log.debug("异步索引单个目录到Mem0: catalogueName={}", catalogue.getName());
             
+            // 索引单个文档
             memoryIntegrationService.indexDocumentToMemoryAsync(
                 catalogue.getTaskId(),
                 catalogue
@@ -256,6 +228,67 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
                     log.debug("索引单个目录到Mem0完成: catalogueName={}", catalogue.getName());
                 }
             });
+            
+            // 检查是否是第一个完成的文档，如果是则触发代码文件索引
+            // 使用synchronized确保只有一个线程能执行代码文件索引
+            triggerCodeFileIndexingOnce(catalogue);
         }
     }
+    
+    // 用于确保每个任务的代码文件只被索引一次的标记
+    private final Set<String> codeFilesIndexedTasks = ConcurrentHashMap.newKeySet();
+    
+    // 存储任务ID和项目路径的映射，避免循环依赖
+    private final Map<String, String> taskProjectPaths = new ConcurrentHashMap<>();
+    
+    /**
+     * 触发代码文件索引（每个任务只执行一次）
+     */
+    private void triggerCodeFileIndexingOnce(Catalogue catalogue) {
+        String taskId = catalogue.getTaskId();
+        if (codeFilesIndexedTasks.add(taskId)) {
+            log.info("触发代码文件索引: taskId={}", taskId);
+            
+            // 从缓存中获取项目路径
+            String projectPath = taskProjectPaths.get(taskId);
+            if (projectPath != null) {
+                memoryIntegrationService.indexCodeFilesToMemoryAsync(
+                    taskId, 
+                    projectPath
+                ).whenComplete((result, throwable) -> {
+                    if (throwable != null) {
+                        log.warn("索引代码文件到Mem0失败: taskId={}", taskId, throwable);
+                        // 如果失败，移除标记以便重试
+                        codeFilesIndexedTasks.remove(taskId);
+                    } else {
+                        log.info("索引代码文件到Mem0完成: taskId={}", taskId);
+                        // 成功后清理路径缓存
+                        taskProjectPaths.remove(taskId);
+                    }
+                });
+            } else {
+                log.warn("无法获取项目路径进行代码文件索引: taskId={}", taskId);
+                // 如果无法获取路径，移除标记
+                codeFilesIndexedTasks.remove(taskId);
+            }
+        }
+    }
+    
+    /**
+     * 缓存任务的项目路径，避免循环依赖
+     */
+    public void cacheTaskProjectPath(String taskId, String projectPath) {
+        taskProjectPaths.put(taskId, projectPath);
+        log.debug("缓存任务项目路径: taskId={}, path={}", taskId, projectPath);
+    }
+    
+    /**
+     * 清理任务相关的缓存数据
+     */
+    public void cleanupTaskCache(String taskId) {
+        taskProjectPaths.remove(taskId);
+        codeFilesIndexedTasks.remove(taskId);
+        log.debug("清理任务缓存: taskId={}", taskId);
+    }
+    
 }

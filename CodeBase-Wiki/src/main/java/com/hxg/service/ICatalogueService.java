@@ -23,9 +23,6 @@ public interface ICatalogueService {
 
     public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath);
 
-    @Async("GenCatalogueDetailExcutor")
-    public void generateCatalogueDetail(Catalogue catalogue, String fileTree, CatalogueStruct catalogueStruct, String localPath);
-
     public void deleteCatalogueByTaskId(String taskId);
 
     public List<Catalogue> getCatalogueByTaskId(String taskId);
@@ -34,4 +31,8 @@ public interface ICatalogueService {
      * 根据taskId获取目录树形结构
      */
     public List<CatalogueListVo> getCatalogueTreeByTaskId(String taskId);
+
+    void cacheTaskProjectPath(String taskId, String localPath);
+
+    void cleanupTaskCache(String taskId);
 }

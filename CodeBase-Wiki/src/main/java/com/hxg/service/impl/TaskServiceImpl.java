@@ -87,6 +87,9 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
             String fileTree = fileService.getFileTree(context.getLocalPath());
             GenCatalogueDTO catalogueDTO = catalogueService.generateCatalogue(fileTree, context);
 
+            // 缓存项目路径到CatalogueService，避免循环依赖
+            catalogueService.cacheTaskProjectPath(context.getTaskId(), context.getLocalPath());
+
             //生成目录详情
             catalogueService.parallelGenerateCatalogueDetail(fileTree, catalogueDTO, context.getLocalPath());
             task.setStatus(TaskStatusEnum.COMPLETED);
@@ -98,6 +101,8 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
             task.setUpdateTime(LocalDateTime.now());
         } finally {
             this.updateById(task);
+            // 清理CatalogueService中的缓存数据
+            catalogueService.cleanupTaskCache(context.getTaskId());
         }
     }
 
