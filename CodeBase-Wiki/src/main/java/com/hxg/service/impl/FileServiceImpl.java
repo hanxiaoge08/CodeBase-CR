@@ -24,9 +24,10 @@ import java.util.zip.ZipInputStream;
 @Slf4j
 @Service
 public class FileServiceImpl implements IFileService {
-    
+
     @Value("${project.repository.base-path:./repository}")
     private String repositoryBasePath;
+
     @Override
     public String getFileTree(String localPath) {
         //1.读取gitignore文件
@@ -147,7 +148,7 @@ public class FileServiceImpl implements IFileService {
         }
 
     }
-    
+
     /**
      * 获取仓库存储的绝对路径
      * 支持相对路径和绝对路径配置
@@ -216,35 +217,61 @@ public class FileServiceImpl implements IFileService {
             return false;
         }
         String relativePath = file.getAbsolutePath().substring(rootPath.length() + 1).replace("\\", "/");
-        for (String pattern : ignorePatterns) {
-            String regexPattern;
-            if (pattern.endsWith("/")) {
-                // 对于目录模式，精确匹配目录名，后跟 / 或字符串结束，然后是任何字符。
-                // 例如，"foo/" 应匹配 "foo/" 或 "foo/bar"
-                String dirName = pattern.substring(0, pattern.length() - 1);
-                regexPattern = "^" + Pattern.quote(dirName) + "(/.*)?$";
-            } else {
-                // 对于文件或通用模式，精确匹配模式，后跟 / 或字符串结束，然后是任何字符。
-                // 例如，"foo" 应匹配 "foo" 或 "foo/bar"
-                regexPattern = "^" + Pattern.quote(pattern) + "(/.*)?$";
-            }
-            Pattern regex = Pattern.compile(regexPattern);
-            Matcher matcher = regex.matcher(relativePath);
 
-            if (matcher.matches()) {
-                // 如果模式专门针对目录（以 '/' 结尾）
-                // 那么只有当当前 'file' 确实是目录时才应被忽略。
-                // 如果是文件但匹配目录模式，则不应被忽略。
-                if (pattern.endsWith("/") && !file.isDirectory()) {
-                    // 此模式适用于目录，但 'file' 不是目录。继续下一个模式。
-                    continue;
-                }
-                // 找到匹配项且条件满足。
+        for (String pattern : ignorePatterns) {
+            if (matchesGitignorePattern(relativePath, pattern, file.isDirectory())) {
                 return true;
             }
         }
         return false;
 
+    }
+
+    /**
+     * 检查文件路径是否匹配gitignore模式
+     *
+     * @param relativePath 相对路径
+     * @param pattern      gitignore模式
+     * @param isDirectory  是否为目录
+     * @return 是否匹配
+     */
+    private boolean matchesGitignorePattern(String relativePath, String pattern, boolean isDirectory) {
+        // 处理目录模式（以/结尾）
+        if (pattern.endsWith("/")) {
+            if (!isDirectory) {
+                return false; // 目录模式不匹配文件
+            }
+            String dirPattern = pattern.substring(0, pattern.length() - 1);
+            return matchesWildcardPattern(relativePath, dirPattern);
+        }
+
+        // 处理文件名模式（包含通配符）
+        if (pattern.contains("*")) {
+            // 对于*.log这样的模式，匹配文件名
+            if (pattern.startsWith("*")) {
+                String fileName = relativePath.contains("/") ?
+                        relativePath.substring(relativePath.lastIndexOf("/") + 1) : relativePath;
+                return matchesWildcardPattern(fileName, pattern);
+            }
+            // 对于path/*.ext这样的模式
+            return matchesWildcardPattern(relativePath, pattern);
+        }
+
+        // 精确匹配
+        return relativePath.equals(pattern) || relativePath.startsWith(pattern + "/");
+    }
+
+    /**
+     * 通配符模式匹配
+     *
+     * @param text    要匹配的文本
+     * @param pattern 包含*通配符的模式
+     * @return 是否匹配
+     */
+    private boolean matchesWildcardPattern(String text, String pattern) {
+        // 将通配符模式转换为正则表达式
+        String regex = "^" + pattern.replace("*", ".*").replace("?", ".") + "$";
+        return text.matches(regex);
     }
 
     /**

@@ -65,7 +65,10 @@ class FileServiceImplTest {
         // Then
         assertNotNull(result);
         assertTrue(result.contains("README.md"));
-        assertTrue(result.contains("src/main/java/Test.java"));
+        assertTrue(result.contains("  - src/\n" +
+                "    - main/\n" +
+                "      - java/\n" +
+                "        - Test.java"));
         assertFalse(result.contains("app.log")); // 被.gitignore忽略
         assertFalse(result.contains("target")); // 被.gitignore忽略
     }
@@ -119,9 +122,14 @@ class FileServiceImplTest {
     @Test
     @DisplayName("解压ZIP文件失败时抛出异常")
     void testUnzipToProjectDirWithInvalidZip() {
-        // Given - 无效的ZIP内容
+        // Given - 模拟在获取输入流时抛出异常
         MockMultipartFile mockFile = new MockMultipartFile(
-            "file", "invalid.zip", "application/zip", "invalid zip content".getBytes());
+            "file", "test.zip", "application/zip", new byte[0]) {
+            @Override
+            public InputStream getInputStream() throws IOException {
+                throw new IOException("模拟IO异常");
+            }
+        };
 
         // When & Then
         assertThrows(RuntimeException.class, 

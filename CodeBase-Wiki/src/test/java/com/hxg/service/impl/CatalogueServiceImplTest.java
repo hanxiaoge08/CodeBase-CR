@@ -39,54 +39,32 @@ class CatalogueServiceImplTest {
     void testProcessCatalogueStructWithWrapper() {
         // Given - 您提供的 JSON 格式
         String jsonWithWrapper = """
-            {
-                "documentation_structure": {
-                    "items": [
-                        {
-                            "title": "system-architecture",
-                            "name": "系统架构",
-                            "dependent_file": [
-                                "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/config/MybatisPlusConfig.java",
-                                "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/config/ThreadPoolConfig.java",
-                                "jdeepwiki/src/main/resources/application.yml"
-                            ],
-                            "prompt": "创建一个全面的内容部分，重点介绍系统的整体架构和组件关系。解释使用的架构决策和模式。可视化系统边界和集成点。",
-                            "children": [
-                                {
-                                    "title": "data-models-persistence",
-                                    "name": "数据模型与持久化",
-                                    "dependent_file": [
-                                        "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/mapper/CatalogueMapper.java",
-                                        "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/model/entity/Catalogue.java",
-                                        "jdeepwiki/src/main/resources/schema.sql"
-                                    ],
-                                    "prompt": "文档数据库模式、数据模型和实体关系。解释数据迁移和版本控制策略。讨论数据访问模式和优化技术。"
-                                }
-                            ]
-                        },
-                        {
-                            "title": "api-integration",
-                            "name": "API与集成",
-                            "dependent_file": [
-                                "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/controller/ChatController.java",
-                                "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/controller/TaskController.java"
-                            ],
-                            "prompt": "文档所有公共API端点、参数和响应。解释外部系统集成模式。解决速率限制、缓存和性能考虑因素。",
-                            "children": [
-                                {
-                                    "title": "chat-controller",
-                                    "name": "聊天控制器",
-                                    "dependent_file": [
-                                        "jdeepwiki/src/main/java/com/d1nvan/jdeepwiki/controller/ChatController.java"
-                                    ],
-                                    "prompt": "开发详细的子部分内容，涵盖聊天控制器的具体方面。"
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-            """;
+<documentation_structure>
+{
+    "items": [
+        {
+            "title": "introduction",
+            "name": "项目简介",
+            "dependent_file": [
+                "README.md"
+            ],
+            "prompt": "介绍JDeepWiki项目的整体目标、背景和用途。解释其主要功能和适用场景。",
+            "children": []
+        },
+        {
+            "title": "getting_started",
+            "name": "快速开始",
+            "dependent_file": [
+                "jdeepwiki/pom.xml",
+                "jdeepwiki-frontend/package.json"
+            ],
+            "prompt": "创建一个指南，帮助用户安装和运行JDeepWiki项目。包括必要的环境配置和依赖项说明。",
+            "children": []
+        }
+    ]
+}
+</documentation_structure>
+""";
 
         // When
         CatalogueStruct result = catalogueService.processCatalogueStruct(jsonWithWrapper);
@@ -98,19 +76,19 @@ class CatalogueServiceImplTest {
 
         // 验证第一个项目
         CatalogueStruct.Item firstItem = result.getItems().get(0);
-        assertEquals("system-architecture", firstItem.getTitle());
-        assertEquals("系统架构", firstItem.getName());
-        assertEquals(3, firstItem.getDependent_file().size());
+        assertEquals("introduction", firstItem.getTitle());
+        assertEquals("项目简介", firstItem.getName());
+        assertEquals(1, firstItem.getDependent_file().size());
         assertNotNull(firstItem.getChildren());
-        assertEquals(1, firstItem.getChildren().size());
+        assertEquals(0, firstItem.getChildren().size());
 
         // 验证第二个项目
         CatalogueStruct.Item secondItem = result.getItems().get(1);
-        assertEquals("api-integration", secondItem.getTitle());
-        assertEquals("API与集成", secondItem.getName());
+        assertEquals("getting_started", secondItem.getTitle());
+        assertEquals("快速开始", secondItem.getName());
         assertEquals(2, secondItem.getDependent_file().size());
         assertNotNull(secondItem.getChildren());
-        assertEquals(1, secondItem.getChildren().size());
+        assertEquals(0, secondItem.getChildren().size());
     }
 
     @Test
@@ -153,18 +131,19 @@ class CatalogueServiceImplTest {
     void testProcessCatalogueStructWithEmptyItems() {
         // Given
         String jsonWithEmptyItems = """
-            {
-                "documentation_structure": {
-                    "items": []
-                }
-            }
-            """;
+<documentation_structure>
+{
+    "items": []
+}
+</documentation_structure>
+""";
+        
 
         // When & Then
         RuntimeException exception = assertThrows(RuntimeException.class, 
             () -> catalogueService.processCatalogueStruct(jsonWithEmptyItems));
 
-        assertTrue(exception.getMessage().contains("LLM生成的目录为空"));
+        assertTrue(exception.getMessage().contains("LLM生成项目目录结构为空"));
     }
 
     @Test
@@ -177,7 +156,7 @@ class CatalogueServiceImplTest {
         RuntimeException exception = assertThrows(RuntimeException.class, 
             () -> catalogueService.processCatalogueStruct(invalidJson));
 
-        assertTrue(exception.getMessage().contains("LLM生成的目录格式不正确"));
+        assertTrue(exception.getMessage().contains("LLM生成项目目录结构为空"));
     }
 } 
 //prompt="""

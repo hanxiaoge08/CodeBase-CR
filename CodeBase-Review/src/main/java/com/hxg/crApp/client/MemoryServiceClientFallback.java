@@ -7,7 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Memory服务Feign客户端熔断降级处理 - Review模块专用
@@ -49,9 +51,12 @@ public class MemoryServiceClientFallback implements MemoryServiceClient {
     }
     
     @Override
-    public String healthCheck() {
+    public Map<String, Object> healthCheck() {
         logger.warn("Memory服务健康检查失败，服务不可用");
-        return "Memory Service Unavailable";
+        Map<String, Object> fallbackResponse = new HashMap<>();
+        fallbackResponse.put("status", "DOWN");
+        fallbackResponse.put("message", "Memory Service Unavailable");
+        return fallbackResponse;
     }
     
     /**

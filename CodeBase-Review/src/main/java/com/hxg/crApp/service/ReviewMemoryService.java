@@ -137,8 +137,8 @@ public class ReviewMemoryService {
      */
     public boolean isMemoryServiceAvailable() {
         try {
-            String result = memoryServiceClient.healthCheck();
-            boolean available = result != null && !result.contains("Unavailable");
+            Map<String, Object> result = memoryServiceClient.healthCheck();
+            boolean available = result != null && "UP".equals(result.get("status"));
             logger.debug("记忆服务可用性检查: {}", available);
             return available;
         } catch (Exception e) {

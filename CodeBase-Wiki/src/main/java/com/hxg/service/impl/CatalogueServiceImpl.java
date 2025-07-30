@@ -58,12 +58,23 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public CatalogueStruct processCatalogueStruct(String result) {
-        String documentationStructure= RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
-        if(StringUtils.isEmpty(documentationStructure)){
+        String documentationStructure=result;
+        if(result.startsWith("<documentation_structure>")){
+            documentationStructure = RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
+        }
+        
+        try{
+            CatalogueStruct catalogueStruct=JSON.parseObject(documentationStructure, CatalogueStruct.class);
+            if (catalogueStruct == null || catalogueStruct.getItems().isEmpty()) {
+                log.error("LLM生成项目目录结构为空");
+                throw new Exception("LLM生成项目目录结构为空");
+            }
+            log.info("LLM生成项目目录结构内容：{}",documentationStructure);
+            return catalogueStruct;
+        }catch (Exception e){
             throw new RuntimeException("LLM生成项目目录结构为空");
         }
-        log.info("LLM生成项目目录结构内容：{}",documentationStructure);
-        return JSON.parseObject(documentationStructure, CatalogueStruct.class);
+        
     }
 
     @Override

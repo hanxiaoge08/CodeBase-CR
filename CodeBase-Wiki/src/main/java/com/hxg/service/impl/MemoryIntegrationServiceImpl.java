@@ -172,8 +172,8 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     @Override
     public boolean isMemoryServiceAvailable() {
         try {
-            String result = memoryServiceClient.healthCheck();
-            return result != null && !result.contains("Unavailable");
+            Map<String, Object> result = memoryServiceClient.healthCheck();
+            return result != null && "UP".equals(result.get("status"));
         } catch (Exception e) {
             logger.debug("Memory服务健康检查失败: {}", e.getMessage());
             return false;

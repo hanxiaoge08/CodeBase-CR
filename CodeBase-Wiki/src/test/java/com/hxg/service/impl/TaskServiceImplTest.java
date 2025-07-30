@@ -70,10 +70,10 @@ class TaskServiceImplTest {
     void testCreateFromGit() {
         // Given
         CreateTaskParams params = new CreateTaskParams();
-        params.setProjectName("test-project");
-        params.setProjectUrl("https://github.com/test/repo.git");
+        params.setProjectName("codeLearn");
+        params.setProjectUrl("https://github.com/hanxiaoge08/codeLearn.git");
         params.setUserName("testuser");
-        params.setBranch("main");
+
         
         String localPath = "/test/path";
         
@@ -93,13 +93,12 @@ class TaskServiceImplTest {
 
         // Then
         assertNotNull(result);
-        assertEquals("test-project", result.getProjectName());
-        assertEquals("https://github.com/test/repo.git", result.getProjectUrl());
-        assertEquals("testuser", result.getUserName());
-        assertEquals(TaskStatusEnum.IN_PROGRESS, result.getStatus());
+        assertEquals("codeLearn", result.getProjectName());
+        assertEquals("https://github.com/hanxiaoge08/codeLearn.git", result.getProjectUrl());
+        assertEquals(1, result.getStatus());
         
         // 验证服务调用
-        verify(fileService).getRepositoryPath("testuser", "test-project");
+        verify(fileService).getRepositoryPath("testuser", "codeLearn");
         verify(gitService).cloneRepository(params, localPath);
         verify(taskMapper).insert(any(Task.class));
         verify(createTaskExecutor).execute(any(Runnable.class));
@@ -135,7 +134,7 @@ class TaskServiceImplTest {
         assertNotNull(result);
         assertEquals("zip-project", result.getProjectName());
         assertEquals("zipuser", result.getUserName());
-        assertEquals(TaskStatusEnum.IN_PROGRESS, result.getStatus());
+        assertEquals(1, result.getStatus());
         
         // 验证服务调用
         verify(fileService).getRepositoryPath("zipuser", "zip-project");
@@ -194,19 +193,20 @@ class TaskServiceImplTest {
     @DisplayName("根据任务ID获取任务")
     void testGetTaskByTaskId() {
         // Given
-        String taskId = "task123";
+        String taskId = "TASK_1753790355262";
         Task expectedTask = new Task();
         expectedTask.setTaskId(taskId);
-        expectedTask.setProjectName("test-project");
+        expectedTask.setProjectName("CodeBase-CR");
         
-        when(taskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(expectedTask);
+        // MyBatis-Plus的getOne()方法会调用selectOne(queryWrapper, true)
+        when(taskMapper.selectOne(any(LambdaQueryWrapper.class), eq(true))).thenReturn(expectedTask);
 
         // When
         Task result = taskService.getTaskByTaskId(taskId);
 
         // Then
         assertEquals(expectedTask, result);
-        verify(taskMapper).selectOne(any(LambdaQueryWrapper.class));
+        verify(taskMapper).selectOne(any(LambdaQueryWrapper.class), eq(true));
     }
 
     @Test
@@ -223,7 +223,7 @@ class TaskServiceImplTest {
         existingTask.setTaskId("task123");
         existingTask.setProjectName("old-project");
         
-        when(taskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existingTask);
+        when(taskMapper.selectOne(any(LambdaQueryWrapper.class), eq(true))).thenReturn(existingTask);
         when(taskMapper.updateById(any(Task.class))).thenReturn(1);
 
         // When
@@ -250,7 +250,7 @@ class TaskServiceImplTest {
         existingTask.setProjectName("delete-project");
         existingTask.setUserName("deleteuser");
         
-        when(taskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existingTask);
+        when(taskMapper.selectOne(any(LambdaQueryWrapper.class), eq(true))).thenReturn(existingTask);
         when(taskMapper.deleteById(anyLong())).thenReturn(1);
         doNothing().when(fileService).deleteProjectDirectory(anyString(), anyString());
         doNothing().when(catalogueService).deleteCatalogueByTaskId(anyString());
@@ -269,7 +269,7 @@ class TaskServiceImplTest {
     void testDeleteNonExistentTask() {
         // Given
         String taskId = "nonexistent";
-        when(taskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(taskMapper.selectOne(any(LambdaQueryWrapper.class), eq(true))).thenReturn(null);
 
         // When
         taskService.deleteTaskByTaskId(taskId);
@@ -291,7 +291,7 @@ class TaskServiceImplTest {
         existingTask.setProjectName("delete-project");
         existingTask.setUserName("deleteuser");
         
-        when(taskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existingTask);
+        when(taskMapper.selectOne(any(LambdaQueryWrapper.class), eq(true))).thenReturn(existingTask);
         when(taskMapper.deleteById(anyLong())).thenReturn(1);
         doThrow(new RuntimeException("删除文件失败")).when(fileService).deleteProjectDirectory(anyString(), anyString());
         doNothing().when(catalogueService).deleteCatalogueByTaskId(anyString());

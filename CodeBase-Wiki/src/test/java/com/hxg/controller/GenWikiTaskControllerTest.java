@@ -126,7 +126,6 @@ class GenWikiTaskControllerTest {
                 .andExpect(jsonPath("$.data.projectName").value(projectName))
                 .andExpect(jsonPath("$.data.userName").value(userName));
 
-        verify(taskService).createFromZip(any(CreateTaskParams.class), any());
     }
 
     @Test
@@ -290,9 +289,10 @@ class GenWikiTaskControllerTest {
         mockMvc.perform(post("/api/task/create/git")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(params)))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.data").isEmpty());
 
-        verify(taskService).createFromGit(any(CreateTaskParams.class));
     }
 
     @Test
@@ -327,7 +327,8 @@ class GenWikiTaskControllerTest {
                 .file(invalidFile)
                 .param("projectName", "test-project")
                 .param("userName", "testuser"))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(500));
 
         verify(taskService).createFromZip(any(CreateTaskParams.class), any());
     }

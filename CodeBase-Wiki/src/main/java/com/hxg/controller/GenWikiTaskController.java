@@ -51,7 +51,13 @@ public class GenWikiTaskController {
         params.setProjectName(projectName);
         params.setUserName(userName);
         params.setSourceType("zip");
-        return ResultVo.success(taskService.createFromZip(params,file));
+        try{
+            return ResultVo.success(taskService.createFromZip(params,file));
+        }catch (RuntimeException e){
+            log.error("从ZIP文件创建任务失败：{}",e.getMessage());
+            return ResultVo.error(e.getMessage());
+        }
+        
     }
 
     @PostMapping("/listPage")

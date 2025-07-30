@@ -20,7 +20,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -152,7 +154,10 @@ class MemoryIntegrationServiceImplTest {
     @DisplayName("检查记忆服务是否可用 - 服务正常")
     void testIsMemoryServiceAvailableTrue() {
         // Given
-        when(memoryServiceClient.healthCheck()).thenReturn("Memory Service is healthy");
+        Map<String, Object> healthResponse = new HashMap<>();
+        healthResponse.put("status", "UP");
+        healthResponse.put("service", "Memory Service");
+        when(memoryServiceClient.healthCheck()).thenReturn(healthResponse);
 
         // When
         boolean result = memoryIntegrationService.isMemoryServiceAvailable();
@@ -166,7 +171,10 @@ class MemoryIntegrationServiceImplTest {
     @DisplayName("检查记忆服务是否可用 - 服务不可用")
     void testIsMemoryServiceAvailableFalse() {
         // Given
-        when(memoryServiceClient.healthCheck()).thenReturn("Memory Service Unavailable");
+        Map<String, Object> healthResponse = new HashMap<>();
+        healthResponse.put("status", "DOWN");
+        healthResponse.put("message", "Memory Service Unavailable");
+        when(memoryServiceClient.healthCheck()).thenReturn(healthResponse);
 
         // When
         boolean result = memoryIntegrationService.isMemoryServiceAvailable();

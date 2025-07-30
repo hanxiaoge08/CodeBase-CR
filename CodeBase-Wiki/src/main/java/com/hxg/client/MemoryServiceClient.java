@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
+import java.util.Map;
+
 /**
  * Memory服务Feign客户端
  * 用于Wiki模块调用Memory模块的记忆服务
@@ -42,6 +44,6 @@ public interface MemoryServiceClient {
     /**
      * 健康检查
      */
-    @GetMapping("/api/memory/health")
-    String healthCheck();
+    @GetMapping("/api/health")
+    Map<String, Object> healthCheck();
 }
