@@ -263,4 +263,151 @@ public class AnalyzeCataloguePrompt {
                     ]
                 }
             """;
+
+    public static String promptV3 = """
+        You are an expert technical documentation architect analyzing a code repository to create a comprehensive, multi-level documentation structure.
+        
+        <code_files>
+        {{$code_files}}
+        </code_files>
+        
+        <repository_location>
+        {{$repository_location}}
+        </repository_location>
+        
+        ## DOCUMENTATION STRUCTURE PRINCIPLES
+        
+        ### Hierarchy Guidelines
+        1. **Create 3-4 levels of depth** where appropriate:
+           - Level 1: Major system areas (概述、架构、功能模块、API、部署等)
+           - Level 2: Specific components/features within each area
+           - Level 3: Implementation details, configurations, examples
+           - Level 4: Advanced topics, edge cases, troubleshooting
+        
+        2. **When to create child sections**:
+           - When a topic has 3+ distinct subtopics
+           - When separating overview from implementation details
+           - When organizing related but independent features
+           - When providing both conceptual and practical content
+        
+        3. **Comprehensive Coverage**:
+           - Start with project overview and architecture
+           - Document each major module/service separately
+           - Include API documentation for each endpoint group
+           - Add configuration and deployment sections
+           - Include development guides and best practices
+           - Add troubleshooting and FAQ sections
+        
+        ### Content Distribution Strategy
+        - **Parent nodes**: High-level overviews, architectural decisions, relationships
+        - **Child nodes**: Specific implementations, code examples, detailed configurations
+        - **Leaf nodes**: API references, parameter lists, error codes, examples
+        
+        ## REQUIRED DOCUMENTATION SECTIONS
+        
+        1. **项目概述** (Project Overview)
+           - 项目简介
+           - 快速开始
+           - 系统需求
+           - 项目结构说明
+        
+        2. **系统架构** (System Architecture)
+           - 总体架构设计
+           - 技术栈说明
+           - 核心模块划分
+             - 各模块详细设计
+             - 模块间交互关系
+           - 数据流设计
+           - 部署架构
+        
+        3. **功能模块** (Feature Modules)
+           - For each major feature/module:
+             - 功能概述
+             - 实现原理
+             - 核心代码解析
+             - 配置说明
+             - 使用示例
+             - 常见问题
+        
+        4. **API文档** (API Documentation)
+           - API概览
+           - For each API group:
+             - 接口列表
+             - 详细接口文档
+               - 请求参数
+               - 响应格式
+               - 错误码说明
+               - 调用示例
+        
+        5. **数据模型** (Data Models)
+           - 数据库设计
+           - 实体关系图
+           - For each major entity:
+             - 字段说明
+             - 关联关系
+             - 索引设计
+        
+        6. **配置指南** (Configuration Guide)
+           - 环境配置
+           - 应用配置
+           - 性能调优
+           - 安全配置
+        
+        7. **部署运维** (Deployment & Operations)
+           - 部署方案
+           - 监控方案
+           - 日志管理
+           - 故障处理
+        
+        8. **开发指南** (Development Guide)
+           - 开发环境搭建
+           - 编码规范
+           - 测试指南
+           - 贡献指南
+        
+        ## OUTPUT REQUIREMENTS
+        
+        <important>
+        1. Generate a **multi-level hierarchical structure** with appropriate depth
+        2. Each parent section should have **relevant child sections**
+        3. Use **descriptive Chinese names** that clearly indicate content
+        4. Include **specific file dependencies** for each section
+        5. Write **detailed prompts** that request code examples and practical content
+        6. Return ONLY valid JSON without any additional text
+        </important>
+        
+        {
+            "items": [
+                {
+                    "title": "project-overview",
+                    "name": "项目概述",
+                    "dependent_file": ["README.md", "package.json", "pom.xml"],
+                    "prompt": "生成项目概述文档。包括：1) 项目的背景、目标和主要功能 2) 技术特点和优势 3) 适用场景和目标用户。请基于README和配置文件提供准确信息。",
+                    "children": [
+                        {
+                            "title": "quick-start",
+                            "name": "快速开始",
+                            "dependent_file": ["README.md", "docker-compose.yml"],
+                            "prompt": "创建快速开始指南。包括：1) 环境要求的详细列表 2) 安装步骤的具体命令 3) 首次运行的配置示例 4) 验证安装成功的方法。提供完整的命令行示例。",
+                            "children": [
+                                {
+                                    "title": "installation-guide",
+                                    "name": "安装指南",
+                                    "dependent_file": ["package.json", "requirements.txt", "Dockerfile"],
+                                    "prompt": "提供详细的安装指南。列出所有依赖项及其版本要求，提供不同操作系统下的安装命令，包括常见安装问题的解决方案。"
+                                },
+                                {
+                                    "title": "first-demo",
+                                    "name": "第一个示例",
+                                    "dependent_file": ["examples/", "demo/"],
+                                    "prompt": "创建一个简单但完整的使用示例。包括：1) 示例代码with详细注释 2) 运行步骤 3) 预期输出 4) 代码解释。确保初学者能够理解。"
+                                }
+                            ]
+                        }
+                    ]
+                }
+                // ... more sections following similar pattern
+            ]
+        }
+        """;
 }
