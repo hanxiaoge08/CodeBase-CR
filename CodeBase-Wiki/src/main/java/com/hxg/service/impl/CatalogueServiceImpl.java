@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -111,45 +112,133 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public List<Catalogue> saveCatalogueStruct(ExecutionContext context, CatalogueStruct catalogueStruct) {
-        List<Catalogue> catalogueList = catalogueStruct.getItems().stream().map(catalogue -> {
-            Catalogue catalogueEntity = new Catalogue();
-            catalogueEntity.setTaskId(context.getTask().getTaskId());
-            catalogueEntity.setCatalogueId(java.util.UUID.randomUUID().toString());
-            catalogueEntity.setParentCatalogueId(null);//TODO: 根据实际结构设置
-            catalogueEntity.setName(catalogue.getName());
-            catalogueEntity.setTitle(catalogue.getTitle());
-            catalogueEntity.setPrompt(catalogue.getPrompt());
-            catalogueEntity.setDependentFile(JSON.toJSONString(catalogue.getDependent_file()));
-            catalogueEntity.setChildren(JSON.toJSONString(catalogue.getChildren()));
-            catalogueEntity.setStatus(CatalogueStatusEnum.IN_PROGRESS.getCode());
-            catalogueEntity.setCreateTime(LocalDateTime.now());
-            return catalogueEntity;
-        }).collect(Collectors.toList());
+        List<Catalogue> allCatalogueList = new ArrayList<>();
         
-        this.saveBatch(catalogueList);
+        // 递归处理所有目录节点
+        for (CatalogueStruct.Item item : catalogueStruct.getItems()) {
+            allCatalogueList.addAll(saveCatalogueItem(context, item, null));
+        }
+        
+        log.info("保存目录结构完成，总共保存了{}个目录节点", allCatalogueList.size());
+        return allCatalogueList;
+    }
+    
+    /**
+     * 递归保存目录项及其子项
+     * @param context 执行上下文
+     * @param item 目录项
+     * @param parentCatalogueId 父目录ID
+     * @return 保存的目录列表
+     */
+    private List<Catalogue> saveCatalogueItem(ExecutionContext context, CatalogueStruct.Item item, String parentCatalogueId) {
+        List<Catalogue> catalogueList = new ArrayList<>();
+        
+        // 创建当前目录实体
+        Catalogue catalogueEntity = new Catalogue();
+        catalogueEntity.setTaskId(context.getTask().getTaskId());
+        catalogueEntity.setCatalogueId(java.util.UUID.randomUUID().toString());
+        catalogueEntity.setParentCatalogueId(parentCatalogueId);
+        catalogueEntity.setName(item.getName());
+        catalogueEntity.setTitle(item.getTitle());
+        catalogueEntity.setPrompt(item.getPrompt());
+        catalogueEntity.setDependentFile(JSON.toJSONString(item.getDependent_file()));
+        
+        // 子目录信息也保存，但主要用于前端显示结构
+        catalogueEntity.setChildren(JSON.toJSONString(item.getChildren()));
+        catalogueEntity.setStatus(CatalogueStatusEnum.IN_PROGRESS.getCode());
+        catalogueEntity.setCreateTime(LocalDateTime.now());
+        
+        // 保存当前目录
+        this.save(catalogueEntity);
+        catalogueList.add(catalogueEntity);
+        
+        log.debug("保存目录节点: name={}, catalogueId={}, parentId={}", 
+                item.getName(), catalogueEntity.getCatalogueId(), parentCatalogueId);
+        
+        // 递归处理子目录
+        if (item.getChildren() != null && !item.getChildren().isEmpty()) {
+            for (CatalogueStruct.Item child : item.getChildren()) {
+                catalogueList.addAll(saveCatalogueItem(context, child, catalogueEntity.getCatalogueId()));
+            }
+        }
+        
         return catalogueList;
     }
 
     @Override
     public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath) {
         // 过滤出需要生成详细内容的目录
-        // 当前逻辑：处理所有目录，因为它们都需要生成详细的文档内容
         List<Catalogue> cataloguesToProcess = genCatalogueDTO.getCatalogueList().stream()
                 .filter(catalogue -> catalogue != null && StringUtils.hasText(catalogue.getName()))
                 .collect(Collectors.toList());
                 
-        log.info("开始并行生成目录详情，总数={}", 
-                genCatalogueDTO.getCatalogueList().size());
+        log.info("开始并行生成目录详情，总数={}", cataloguesToProcess.size());
         
         for (Catalogue catalogue : cataloguesToProcess) {
             // 缓存项目路径以避免循环依赖
             catalogueDetailAsyncService.cacheTaskProjectPath(catalogue.getTaskId(), localPath);
             
-            // 调用独立的异步服务
-            catalogueDetailAsyncService.generateCatalogueDetail(catalogue, fileTree, genCatalogueDTO.getCatalogueStruct(), localPath);
+            // 为每个目录创建专门的上下文信息
+            CatalogueStruct specificContext = createSpecificContext(catalogue, genCatalogueDTO.getCatalogueStruct());
+            
+            // 调用独立的异步服务，传递特定的上下文
+            catalogueDetailAsyncService.generateCatalogueDetail(catalogue, fileTree, specificContext, localPath);
         }
         
         log.info("所有目录详情生成任务已启动");
+    }
+    
+    /**
+     * 为特定目录创建专门的上下文信息
+     * @param targetCatalogue 目标目录
+     * @param fullStruct 完整的目录结构
+     * @return 针对该目录的上下文信息
+     */
+    private CatalogueStruct createSpecificContext(Catalogue targetCatalogue, CatalogueStruct fullStruct) {
+        CatalogueStruct specificContext = new CatalogueStruct();
+        
+        // 查找目标目录在结构中的位置和上下文
+        CatalogueStruct.Item targetItem = findTargetItem(targetCatalogue, fullStruct.getItems());
+        
+        if (targetItem != null) {
+            // 创建包含目标项及其上下文的结构
+            List<CatalogueStruct.Item> contextItems = new ArrayList<>();
+            contextItems.add(targetItem);
+            specificContext.setItems(contextItems);
+            
+            log.debug("为目录 {} 创建特定上下文，包含 {} 个依赖文件", 
+                    targetCatalogue.getName(), 
+                    targetItem.getDependent_file() != null ? targetItem.getDependent_file().size() : 0);
+        } else {
+            // 如果找不到目标项，使用完整结构作为fallback
+            log.warn("无法为目录 {} 找到对应的结构项，使用完整结构", targetCatalogue.getName());
+            specificContext = fullStruct;
+        }
+        
+        return specificContext;
+    }
+    
+    /**
+     * 在目录树中查找目标目录项
+     */
+    private CatalogueStruct.Item findTargetItem(Catalogue targetCatalogue, List<CatalogueStruct.Item> items) {
+        if (items == null) return null;
+        
+        for (CatalogueStruct.Item item : items) {
+            // 匹配名称和标题
+            if ((targetCatalogue.getName() != null && targetCatalogue.getName().equals(item.getName())) ||
+                (targetCatalogue.getTitle() != null && targetCatalogue.getTitle().equals(item.getTitle()))) {
+                return item;
+            }
+            
+            // 递归查找子项
+            CatalogueStruct.Item found = findTargetItem(targetCatalogue, item.getChildren());
+            if (found != null) {
+                return found;
+            }
+        }
+        
+        return null;
     }
 
     @Override

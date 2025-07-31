@@ -70,8 +70,8 @@ public class CatalogueDetailAsyncService {
                     .replace("{{repository_location}}", localPath)
                     .replace("{{prompt}}", catalogue.getPrompt())
                     .replace("{{title}}", catalogueName)
-                    .replace("{{$repository_files}}", fileTree)
-                    .replace("{{$catalogue}}", JSON.toJSONString(catalogueStruct));
+                    .replace("{{repository_files}}", fileTree)
+                    .replace("{{catalogue}}", JSON.toJSONString(catalogueStruct));
                     
             log.info("开始生成目录详情，使用prompt版本: {}, catalogueName: {}", docPromptVersion, catalogueName);
             String result = llmService.callWithTools(prompt);

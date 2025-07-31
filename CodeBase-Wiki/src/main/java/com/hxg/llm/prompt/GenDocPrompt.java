@@ -205,23 +205,23 @@ public class GenDocPrompt {
     
     <input_parameters>
     <documentation_objective>
-    {{$prompt}}
+    {{prompt}}
     </documentation_objective>
 
     <repository_location>
-    {{$repository_location}}
+    {{repository_location}}
     </repository_location>
 
     <document_title>
-    {{$title}}
+    {{title}}
     </document_title>
 
     <repository_files>
-    {{$repository_files}}
+    {{repository_files}}
     </repository_files>
 
     <repository_catalogue>
-    {{$catalogue}}
+    {{catalogue}}
     </repository_catalogue>
     </input_parameters>
     

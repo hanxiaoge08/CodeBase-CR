@@ -19,15 +19,6 @@ public class CatalogueStruct {
         private String name;
         private List<String> dependent_file;
         private String prompt;
-        private List<children> children;
-    }
-
-    @Data
-    public static class children {
-        private String title;
-        private String name;
-        private List<String> dependent_file;
-        private String prompt;
-
+        private List<Item> children; // 修改为支持递归嵌套的 Item 类型
     }
 }
