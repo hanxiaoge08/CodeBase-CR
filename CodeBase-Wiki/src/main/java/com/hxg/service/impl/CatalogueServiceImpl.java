@@ -16,6 +16,7 @@ import com.hxg.service.IMemoryIntegrationService;
 import com.hxg.service.async.CatalogueDetailAsyncService;
 import com.hxg.utils.RegexUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -35,6 +36,9 @@ import org.springframework.util.StringUtils;
 @Slf4j
 @Service
 public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue> implements ICatalogueService {
+    @Value("${project.wiki.prompt.catalogue-version}")
+    private String cataloguePromptVersion;
+    
     private final LlmService llmService;
     private final IMemoryIntegrationService memoryIntegrationService;
     private final CatalogueDetailAsyncService catalogueDetailAsyncService;
@@ -49,10 +53,16 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
 
     @Override
     public GenCatalogueDTO generateCatalogue(String fileTree, ExecutionContext context) {
-        String genCataloguePrompt= AnalyzeCataloguePrompt.promptV2
-                .replace("{{$code_files}}",fileTree)
-                .replace("{{$repository_location}}",context.getLocalPath());
-        log.info("LLM开始生成项目目录");
+        String genCataloguePrompt = switch (cataloguePromptVersion) {
+            case "v1" -> AnalyzeCataloguePrompt.promptV1;
+            case "v2" -> AnalyzeCataloguePrompt.promptV2;
+            case "v3" -> AnalyzeCataloguePrompt.promptV3;
+            default -> AnalyzeCataloguePrompt.promptV3;
+        };
+        genCataloguePrompt = genCataloguePrompt
+                .replace("{{$code_files}}", fileTree)
+                .replace("{{$repository_location}}", context.getLocalPath());
+        log.info("LLM开始生成项目目录，使用prompt版本: {}", cataloguePromptVersion);
         String result=llmService.callWithTools(genCataloguePrompt);
         log.info("LLM生成项目目录完成");
         

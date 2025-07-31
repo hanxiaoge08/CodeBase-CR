@@ -180,6 +180,12 @@
             <artifactId>hamcrest-library</artifactId>
             <version>1.3</version>
         </dependency>
+
+        <!-- AspectJ for AOP support -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

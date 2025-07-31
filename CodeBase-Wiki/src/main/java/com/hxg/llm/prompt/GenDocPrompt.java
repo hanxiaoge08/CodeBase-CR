@@ -6,7 +6,7 @@ package com.hxg.llm.prompt;
  * @date 2025/7/23 15:28
  */
 public class GenDocPrompt {
-    public static final String prompt = """
+    public static final String promptV1 = """
     /no_think # Elite Documentation Engineering System
 
     You are an advanced documentation engineering system with expertise in creating comprehensive, accessible technical documentation from Git repositories. Your mission is to analyze, document, and visualize software systems while maintaining rigorous accuracy and clarity.

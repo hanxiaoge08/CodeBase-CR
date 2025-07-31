@@ -41,11 +41,17 @@ mybatis-plus:
 logging:
   level:
     root: INFO
+    # Tool调用监控日志
+    com.hxg.monitor: INFO
+    com.hxg.llm.tool: DEBUG
+    com.hxg.llm.service: INFO
   org:
     springframework:
       boot: error
   file:
     name: ./logs/codebasewiki.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
 # Memory服务配置
 memory:
@@ -70,3 +76,16 @@ project:
   repository:
     # Git仓库克隆根目录
     base-path: ${PROJECT_REPO_PATH:C:\Code\repository}
+  # Wiki文档生成配置
+  wiki:
+    prompt:
+      # 目录生成prompt版本 (v1, v2, v3)
+      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v3}
+      # 文档生成prompt版本 (v1, v2)
+      doc-version: ${WIKI_DOC_PROMPT_VERSION:v2}
+    # 监控配置
+    monitor:
+      # 启用Tool Calling监控
+      tool-calling: ${WIKI_MONITOR_TOOL_CALLING:true}
+      # 记录详细的Tool调用信息
+      tool-details: ${WIKI_MONITOR_TOOL_DETAILS:true}

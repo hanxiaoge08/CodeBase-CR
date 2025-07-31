@@ -9,6 +9,7 @@ import com.hxg.model.enums.CatalogueStatusEnum;
 import com.hxg.mapper.CatalogueMapper;
 import com.hxg.service.IMemoryIntegrationService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 public class CatalogueDetailAsyncService {
+    @Value("${project.wiki.prompt.doc-version}")
+    private String docPromptVersion;
     
     private final LlmService llmService;
     private final CatalogueMapper catalogueMapper;
@@ -58,14 +61,20 @@ public class CatalogueDetailAsyncService {
         log.info("异步生成目录详情：taskId={}, catalogueName={}", taskId, catalogueName);
         
         try{
-            String prompt= GenDocPrompt.prompt
-                    .replace("{{repository_location}}",localPath)
-                    .replace("{{prompt}}",catalogue.getPrompt())
-                    .replace("{{title}}",catalogueName)
-                    .replace("{{$repository_files}}",fileTree)
-                    .replace("{{$catalogue}}",JSON.toJSONString(catalogueStruct));
+            String prompt = switch (docPromptVersion) {
+                case "v1" -> GenDocPrompt.promptV1;
+                case "v2" -> GenDocPrompt.promptV2;
+                default -> GenDocPrompt.promptV2;
+            };
+            prompt = prompt
+                    .replace("{{repository_location}}", localPath)
+                    .replace("{{prompt}}", catalogue.getPrompt())
+                    .replace("{{title}}", catalogueName)
+                    .replace("{{$repository_files}}", fileTree)
+                    .replace("{{$catalogue}}", JSON.toJSONString(catalogueStruct));
                     
-            String result=llmService.callWithTools(prompt);
+            log.info("开始生成目录详情，使用prompt版本: {}, catalogueName: {}", docPromptVersion, catalogueName);
+            String result = llmService.callWithTools(prompt);
             
             if(StringUtils.isEmpty(result)){
                 throw new RuntimeException("LLM生成目录详情结果为空");

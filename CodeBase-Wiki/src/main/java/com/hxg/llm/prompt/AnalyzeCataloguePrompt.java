@@ -6,7 +6,7 @@ package com.hxg.llm.prompt;
  * @date 2025/7/23 15:27
  */
 public class AnalyzeCataloguePrompt {
-    public static String prompt = """
+    public static String promptV1 = """
             You are an expert technical documentation specialist with advanced software development knowledge. Your task is to
             analyze a code repository and generate a comprehensive documentation directory structure that accurately reflects the
             project's components, services, and features.
