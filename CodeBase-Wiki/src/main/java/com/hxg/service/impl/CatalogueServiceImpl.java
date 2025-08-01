@@ -80,6 +80,10 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
         if(result.startsWith("<documentation_structure>")){
             documentationStructure = RegexUtil.extractXmlTagContent(result,"<documentation_structure>","</documentation_structure>");
         }
+        // 处理```json {json对象}```格式的返回
+        else if(result.startsWith("```json") && result.endsWith("```")){
+            documentationStructure = result.substring(7, result.length() - 3).trim();
+        }
         
         try{
             // 首先尝试直接解析为CatalogueStruct

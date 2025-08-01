@@ -3,6 +3,7 @@ package com.hxg.service.async;
 import com.alibaba.fastjson2.JSON;
 import com.hxg.llm.prompt.GenDocPrompt;
 import com.hxg.llm.service.LlmService;
+import com.hxg.llm.tool.FileSystemTool;
 import com.hxg.model.dto.CatalogueStruct;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.model.enums.CatalogueStatusEnum;
@@ -59,6 +60,9 @@ public class CatalogueDetailAsyncService {
         String catalogueName = catalogue.getName();
         
         log.info("异步生成目录详情：taskId={}, catalogueName={}", taskId, catalogueName);
+        
+        // 设置项目根路径到 ThreadLocal，供 FileSystemTool 使用
+        FileSystemTool.setProjectRoot(localPath);
         
         try{
             String prompt = switch (docPromptVersion) {
@@ -120,6 +124,9 @@ public class CatalogueDetailAsyncService {
                 StringUtils.hasText(catalogue.getContent())) {
                 indexSingleCatalogueToMemoryAsync(catalogue);
             }
+            
+            // 清理 ThreadLocal，避免内存泄漏
+            FileSystemTool.clearProjectRoot();
         }
     }
     

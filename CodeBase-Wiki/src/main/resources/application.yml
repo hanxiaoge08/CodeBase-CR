@@ -10,7 +10,7 @@ spring:
       api-key: ${DASHSCOPE_API_KEY}
       chat:
         options:
-          model: qwen-plus-2025-01-25
+          model: qwen-plus-2025-04-28
   application:
     name: CodeBase-Wiki
   datasource:
