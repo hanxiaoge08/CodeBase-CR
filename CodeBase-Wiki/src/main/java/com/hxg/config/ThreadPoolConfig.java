@@ -26,11 +26,6 @@ public class ThreadPoolConfig {
      */
     private static final int QUEUE_CAPACITY = 10000;
 
-    @Bean
-    public MdcTaskDecorator mdcTaskDecorator() {
-        return new MdcTaskDecorator();
-    }
-
     @Bean(name = "CreateTaskExecutor")
     public ThreadPoolTaskExecutor createTaskExecutor(MdcTaskDecorator mdcTaskDecorator) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
