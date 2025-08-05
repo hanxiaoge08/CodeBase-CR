@@ -29,6 +29,25 @@ spring:
       schema-locations: classpath:schema.sql
       mode: always
       continue-on-error: true
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+      acks: 1
+      batch-size: 16384
+      linger-ms: 5
+    
+    consumer:
+      group-id: doc-generation-consumer-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 10
+      properties:
+        spring.json.trusted.packages: "com.hxg.queue.model"
 
 # MyBatis-Plus 配置
 mybatis-plus:
@@ -89,9 +108,25 @@ project:
       catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v4}
       # 文档生成prompt版本 (v1, v2)
       doc-version: ${WIKI_DOC_PROMPT_VERSION:v3}
+    # Kafka消息队列配置
+    kafka:
+      topics:
+        doc-generation: "doc-generation-topic"
+        doc-retry: "doc-generation-retry-topic"
+        doc-dlq: "doc-generation-dlq"
+      consumer:
+        # 最大并发消费者数量
+        max-concurrency: 2
+        # 处理间隔(ms)
+        process-interval: 2000
+        # 最大重试次数
+        max-retry: 3
+        # 重试延迟(ms)
+        retry-delay: 30000
     # 监控配置
     monitor:
       # 启用Tool Calling监控
       tool-calling: ${WIKI_MONITOR_TOOL_CALLING:true}
       # 记录详细的Tool调用信息
       tool-details: ${WIKI_MONITOR_TOOL_DETAILS:true}
+

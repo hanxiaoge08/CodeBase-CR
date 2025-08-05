@@ -11,9 +11,10 @@ import com.hxg.model.dto.CatalogueStruct;
 import com.hxg.model.dto.GenCatalogueDTO;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.model.enums.CatalogueStatusEnum;
+import com.hxg.queue.model.DocumentGenerationTask;
+import com.hxg.queue.producer.DocumentGenerationProducer;
 import com.hxg.service.ICatalogueService;
 import com.hxg.service.IMemoryIntegrationService;
-import com.hxg.service.async.CatalogueDetailAsyncService;
 import com.hxg.utils.RegexUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,14 +43,14 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
     
     private final LlmService llmService;
     private final IMemoryIntegrationService memoryIntegrationService;
-    private final CatalogueDetailAsyncService catalogueDetailAsyncService;
+    private final DocumentGenerationProducer documentGenerationProducer;
 
     public CatalogueServiceImpl(LlmService llmService, 
                               IMemoryIntegrationService memoryIntegrationService,
-                              CatalogueDetailAsyncService catalogueDetailAsyncService) {
+                              DocumentGenerationProducer documentGenerationProducer) {
         this.llmService = llmService;
         this.memoryIntegrationService = memoryIntegrationService;
-        this.catalogueDetailAsyncService = catalogueDetailAsyncService;
+        this.documentGenerationProducer = documentGenerationProducer;
     }
 
     @Override
@@ -177,20 +178,38 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
                 .filter(catalogue -> catalogue != null && StringUtils.hasText(catalogue.getName()))
                 .collect(Collectors.toList());
                 
-        log.info("开始并行生成目录详情，总数={}", cataloguesToProcess.size());
+        log.info("开始通过Kafka队列生成目录详情，总数={}", cataloguesToProcess.size());
         
+        int sentCount = 0;
         for (Catalogue catalogue : cataloguesToProcess) {
-            // 缓存项目路径以避免循环依赖
-            catalogueDetailAsyncService.cacheTaskProjectPath(catalogue.getTaskId(), localPath);
-            
-            // 为每个目录创建专门的上下文信息
-            CatalogueStruct specificContext = createSpecificContext(catalogue, genCatalogueDTO.getCatalogueStruct());
-            
-            // 调用独立的异步服务，传递特定的上下文
-            catalogueDetailAsyncService.generateCatalogueDetail(catalogue, fileTree, specificContext, localPath);
+            try {
+                // 为每个目录创建专门的上下文信息
+                CatalogueStruct specificContext = createSpecificContext(catalogue, genCatalogueDTO.getCatalogueStruct());
+                
+                // 创建文档生成任务
+                DocumentGenerationTask task = DocumentGenerationTask.create(catalogue, fileTree, specificContext, localPath);
+                
+                // 发送任务到Kafka队列
+                documentGenerationProducer.sendTask(task);
+                sentCount++;
+                
+                log.debug("文档生成任务已发送到Kafka: taskId={}, catalogueName={}", 
+                        task.getTaskId(), task.getCatalogueName());
+                
+            } catch (Exception e) {
+                log.error("发送文档生成任务到Kafka失败: catalogueName={}, error={}", 
+                        catalogue.getName(), e.getMessage(), e);
+                
+                // 更新目录状态为失败
+                catalogue.setStatus(CatalogueStatusEnum.FAILED.getCode());
+                catalogue.setFailReason("发送到队列失败: " + e.getMessage());
+                catalogue.setUpdateTime(LocalDateTime.now());
+                this.updateById(catalogue);
+            }
         }
         
-        log.info("所有目录详情生成任务已启动");
+        log.info("文档生成任务发送完成: 成功发送={}/{}, 使用Kafka消息队列进行异步处理", 
+                sentCount, cataloguesToProcess.size());
     }
     
     /**
