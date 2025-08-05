@@ -58,7 +58,8 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
             case "v1" -> AnalyzeCataloguePrompt.promptV1;
             case "v2" -> AnalyzeCataloguePrompt.promptV2;
             case "v3" -> AnalyzeCataloguePrompt.promptV3;
-            default -> AnalyzeCataloguePrompt.promptV3;
+            case "v4" -> AnalyzeCataloguePrompt.promptV4;
+            default -> AnalyzeCataloguePrompt.promptV4;
         };
         genCataloguePrompt = genCataloguePrompt
                 .replace("{{$code_files}}", fileTree)

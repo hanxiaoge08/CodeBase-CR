@@ -86,9 +86,9 @@ project:
   wiki:
     prompt:
       # 目录生成prompt版本 (v1, v2, v3)
-      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v3}
+      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v4}
       # 文档生成prompt版本 (v1, v2)
-      doc-version: ${WIKI_DOC_PROMPT_VERSION:v2}
+      doc-version: ${WIKI_DOC_PROMPT_VERSION:v3}
     # 监控配置
     monitor:
       # 启用Tool Calling监控

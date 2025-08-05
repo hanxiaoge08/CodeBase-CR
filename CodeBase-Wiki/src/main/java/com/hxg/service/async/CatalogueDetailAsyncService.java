@@ -68,7 +68,8 @@ public class CatalogueDetailAsyncService {
             String prompt = switch (docPromptVersion) {
                 case "v1" -> GenDocPrompt.promptV1;
                 case "v2" -> GenDocPrompt.promptV2;
-                default -> GenDocPrompt.promptV2;
+                case "v3" -> GenDocPrompt.promptV3;
+                default -> GenDocPrompt.promptV3;
             };
             prompt = prompt
                     .replace("{{repository_location}}", localPath)

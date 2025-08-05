@@ -2,6 +2,7 @@ package com.hxg.llm.service;
 
 import com.alibaba.cloud.ai.memory.jdbc.SQLiteChatMemoryRepository;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -19,6 +20,7 @@ import static org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID;
  * @date 2025/7/20 00:42
  */
 @Service
+@Slf4j
 public class LlmService {
     private final ChatClient chatClient;
     private final MessageWindowChatMemory chatMemory;

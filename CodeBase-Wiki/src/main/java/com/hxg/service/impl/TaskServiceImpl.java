@@ -51,8 +51,10 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
         String localPath = fileService.getRepositoryPath(params.getUserName(), params.getProjectName());
 
         if ("git".equals(params.getSourceType())) {
+            log.info("开始从Git仓库拉取项目");
             gitService.cloneRepository(params, localPath);
         } else {
+            log.info("开始解压ZIP文件");
             //解压到项目目录
             fileService.unzipToProjectDir(file, params.getUserName(), params.getProjectName());
         }
