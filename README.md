@@ -10,17 +10,21 @@
 - 📊 **任务管理系统**: 完整的分析任务创建、跟踪和管理功能
 - 🎯 **精确定位分析**: 提供文件和行级别的详细分析结果
 - 🌐 **现代化界面**: React前端提供直观的用户交互体验
-- ⚡ **异步处理**: 高性能的后台任务处理和实时状态更新
+- ⚡ **异步处理**: 基于Kafka消息队列的高性能后台任务处理
 - 📋 **双知识库**: 结合编码规范和项目上下文的RAG检索增强
+- 🚀 **并发控制**: 智能的任务并发限制和API访问频率控制
+- 🧠 **记忆系统**: 集成Mem0记忆系统的智能知识索引
 
 ## 技术栈
 
 ### 后端技术
-- **Java 21** + **Spring Boot 3.x** - 核心后端框架
+- **Java 21** + **Spring Boot 3.4.5** - 核心后端框架
 - **Spring AI** + **Spring AI Alibaba** - AI集成和大模型调用
+- **Apache Kafka** - 消息队列系统，支持异步文档生成和Code Review
 - **SQLite** + **MyBatis-Plus** - 数据持久化
 - **GitHub API** + **JGit** - 代码仓库集成
 - **阿里云通义千问/OpenAI** - 大语言模型服务
+- **Mem0** - 记忆系统集成，提供智能知识索引
 
 ### 前端技术
 - **React 18** + **Ant Design 5.x** - 现代化UI框架
@@ -30,8 +34,8 @@
 - **highlight.js** - 代码语法高亮
 
 ### 系统架构
-- **多模块设计**: CodeBase-Review(审查) + CodeBase-Wiki(分析) + Frontend(界面)
-- **异步任务处理**: 基于Spring异步机制的后台任务队列
+- **多模块设计**: CodeBase-Review(审查) + CodeBase-Wiki(分析)+CodeBase-Memory(记忆) + Frontend(界面)
+- **Kafka异步架构**: 生产者-消费者模式的消息队列处理
 - **RESTful API**: 前后端分离的接口设计
 - **向量检索增强**: RAG技术结合知识库的智能分析
 
@@ -41,9 +45,10 @@
 
 确保已安装：
 - **Java 21+** (后端)
-- **Node.js 16+** + **npm 8+** (前端)
+- **Node.js 16+** + **npm 8+** (前端)  
 - **Maven 3.8+** (后端构建)
 - **Git** (代码仓库操作)
+- **Docker** (可选，用于Kafka部署)
 
 ### 2. 配置环境变量
 
@@ -55,19 +60,28 @@ export OPENAI_API_KEY=your-openai-api-key        # OpenAI
 # GitHub集成配置（用于代码审查功能）
 export GITHUB_TOKEN=your-github-token
 export GITHUB_WEBHOOK_SECRET=your-webhook-secret
+
+# Mem0记忆系统配置（可选）
+export MEM0_API_URL=http://localhost:8080
 ```
 
-### 3. 启动后端服务
+### 3. 启动Kafka服务
+
+```bash
+# 使用Docker Compose启动Kafka
+cd CodeBase-Wiki
+docker-compose up -d
+```
+
+### 4. 启动后端服务
 
 ```bash
 # 编译并启动后端
 mvn clean install
 mvn spring-boot:run -pl CodeBase-Wiki
-
-# 后端将在 http://localhost:8080 启动
 ```
 
-### 4. 启动前端应用
+### 5. 启动前端应用
 
 ```bash
 # 进入前端目录
@@ -82,13 +96,13 @@ npm start
 # 前端将在 http://localhost:3000 启动
 ```
 
-### 5. 访问应用
+### 6. 访问应用
 
 - **前端界面**: http://localhost:3000
-- **后端API**: http://localhost:8080
+- **Kafka管理界面**: http://localhost:8000 (AKHQ)
 - **管理后台**: http://localhost:3000/admin
 
-### 6. 配置GitHub Webhook (可选)
+### 7. 配置GitHub Webhook (可选)
 
 如需使用代码审查功能，在GitHub仓库设置中添加Webhook：
 - **Payload URL**: `http://your-domain:8080/api/v1/github/events`
@@ -109,25 +123,46 @@ spring:
         options:
           model: gpt-4o-mini
           temperature: 0.1
+  
+  # Kafka消息队列配置
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: doc-generation-consumer-group
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
+# CodeBase-Wiki模块专用配置
+project:
+  wiki:
+    prompt:
+      doc-version: v3    # 文档生成提示词版本
+    kafka:
+      topics:
+        doc-generation: "wiki-doc-generation"      # 主队列
+        doc-retry: "wiki-doc-retry"                # 重试队列
+        doc-dlq: "wiki-doc-dlq"                    # 死信队列
+      consumer:
+        max-concurrency: 2        # 最大并发处理数
+        process-interval: 2000    # 处理间隔(毫秒)
+        max-retry: 3              # 最大重试次数
+
+# GitHub配置
 app:
   github:
     token: ${GITHUB_TOKEN}
     webhook:
       secret: ${GITHUB_WEBHOOK_SECRET}
+
+# 记忆系统配置
+memory-service:
+  enabled: true
+  base-url: ${MEM0_API_URL:http://localhost:8100}
 ```
-
-### 支持的LLM提供商
-
-1. **OpenAI** (默认)
-   - GPT-4o-mini (推荐)
-   - GPT-4
-   - GPT-3.5-turbo
-
-2. **阿里云通义千问**
-   - qwen-turbo
-   - qwen-plus
-   - qwen-max
 
 ## 核心工作流程
 
@@ -136,8 +171,10 @@ app:
 2. **获取代码**: 从GitHub克隆仓库或上传项目压缩包
 3. **结构分析**: 深度解析项目文件结构和代码组织
 4. **AI目录生成**: 基于代码内容智能生成文档目录结构
-5. **文档生成**: 使用LLM为每个模块生成详细技术文档
-6. **结果展示**: 在前端界面展示分析结果和生成的文档
+5. **异步文档生成**: 通过Kafka消息队列异步生成每个目录的详细文档
+7. **状态同步**: 实时更新任务状态和进度
+8. **记忆索引**: 将生成的文档和代码自动索引到Mem0记忆系统
+9. **结果展示**: 在前端界面展示分析结果和生成的文档
 
 ### 🤖 代码审查流程  
 1. **接收事件**: GitHub发送Pull Request事件到Webhook端点
@@ -150,10 +187,24 @@ app:
 
 ### 📊 任务管理流程
 1. **任务创建**: 支持Git仓库和文件上传两种方式
-2. **异步处理**: 后台队列处理大型项目分析任务  
-3. **状态跟踪**: 实时显示任务执行进度和状态
-4. **结果查看**: 提供详细的分析报告和文档预览
-5. **任务管理**: 支持任务编辑、删除和重新执行
+2. **消息发送**: 将文档生成任务发送到Kafka主队列
+3. **异步处理**: 消费者从队列中拉取任务并处理
+4. **任务验证**: 处理前验证任务和目录记录是否仍存在
+6. **状态跟踪**: 实时显示任务执行进度和状态
+7. **错误重试**: 失败任务自动重试（最大3次）
+8. **死信处理**: 超过重试次数的任务进入死信队列
+9. **任务管理**: 支持任务编辑、删除和重新执行
+
+### 🚀 Kafka消息队列架构
+```
+生产者 -> [主队列] -> 消费者 -> 处理成功
+    |              |
+    v              v (失败)
+[重试队列] <----- 重试逻辑
+    |
+    v (超过重试次数)
+[死信队列]
+```
 
 ## 项目结构
 
@@ -174,9 +225,22 @@ CodeBase-CR/                           # 主项目根目录
 │   ├── src/main/java/com/hxg/
 │   │   ├── controller/               # API控制器
 │   │   ├── service/                  # 分析服务
+│   │   │   ├── impl/                 # 服务实现类
+│   │   │   └── async/                # 异步服务（已迁移到Kafka）
+│   │   ├── queue/                    # Kafka消息队列层
+│   │   │   ├── config/               # Kafka配置
+│   │   │   ├── producer/             # 消息生产者
+│   │   │   ├── consumer/             # 消息消费者
+│   │   │   ├── service/              # 文档处理服务
+│   │   │   └── model/                # 消息模型
 │   │   ├── entity/                   # 数据实体
-│   │   ├── llm/prompt/               # AI提示词模板
+│   │   ├── llm/                      # AI集成层
+│   │   │   ├── prompt/               # AI提示词模板
+│   │   │   ├── service/              # LLM服务
+│   │   │   └── tool/                 # AI工具（FileSystemTool等）
 │   │   └── mapper/                   # 数据访问层
+│   ├── docker-compose.yml            # Kafka Docker配置
+│   ├── start-kafka.ps1               # Kafka启动脚本
 │   └── src/main/resources/           # SQL脚本和配置
 │
 ├── CodeBaseAI-frontend/               # React前端应用
@@ -307,45 +371,37 @@ services:
 1. **AI模型调用失败**
    - 检查API密钥配置是否正确
    - 确认网络连接和API配额
+   - 查看日志中的具体错误信息
 
 2. **前端无法连接后端**
    - 检查API接口地址配置
    - 确认后端服务已正常启动
+   - 检查CORS配置
 
 3. **任务执行失败**
    - 查看日志获取详细错误信息
    - 检查项目文件权限和磁盘空间
+   - 确认依赖服务（Kafka、Mem0）状态
 
-4. **GitHub集成问题**
+4. **Kafka连接问题**
+   - 确认Kafka服务已启动：`docker-compose ps`
+   - 检查端口占用：`netstat -an | findstr 9092`
+   - 查看Kafka日志：`docker logs kafka`
+
+5. **FileSystemTool重复读取文件**
+   - 检查ThreadLocal清理是否正常
+   - 重启应用清除可能的状态污染
+   - 查看文件读取缓存状态
+
+6. **任务删除后仍在执行**
+   - 确认已更新到最新版本（包含任务验证逻辑）
+   - 查看消费者日志确认跳过删除任务的记录
+   - 检查数据库中任务记录是否已删除
+
+7. **GitHub集成问题**
    - 验证GitHub Token权限
-   - 检查Webhook配置
-
-### 日志查看
-
-```bash
-# 查看应用日志
-tail -f logs/application.log
-
-# Docker环境下查看日志
-docker logs -f container-name
-```
-
-## API文档
-
-### 主要接口
-
-#### 任务管理
-- `POST /api/task/upload` - 创建分析任务
-- `GET /api/task/list` - 获取任务列表
-- `GET /api/task/{taskId}` - 获取任务详情
-
-#### 文档生成
-- `GET /api/catalogue/{taskId}` - 获取文档目录
-- `GET /api/catalogue/content/{catalogueId}` - 获取文档内容
-
-#### 代码审查
-- `POST /api/v1/github/events` - GitHub Webhook接收
-- `GET /api/v1/github/health` - 健康检查
+   - 检查Webhook配置和密钥
+   - 查看GitHub事件接收日志
 
 ## 贡献指南
 
@@ -364,6 +420,25 @@ docker logs -f container-name
 - 代码注释使用中文
 - 提交信息使用中文
 
+## 更新日志
+
+### v2.0.0 (2025-08-06)
+- 🚀 **重大架构升级**: 从Spring异步改为Kafka消息队列架构
+- ⚡ **并发控制优化**: 实现基于信号量的精确并发限制（2个并发任务）
+- 🔧 **FileSystemTool修复**: 解决ThreadLocal状态污染和重复文件读取问题
+- 🛡️ **任务删除优化**: 修复删除任务后消息队列仍执行的问题
+- 📊 **队列监控**: 添加Kafka队列状态监控和AKHQ管理界面
+- 🔄 **重试机制**: 实现3次重试+死信队列的容错处理
+- 🧠 **记忆系统**: 完善Mem0集成，支持文档和代码自动索引
+- 🐳 **Docker支持**: 提供完整的Docker Compose部署方案
+
+### v1.0.0 (2025-07-31)  
+- ✨ 初始版本发布
+- 🔍 基于Spring AI的智能代码仓库分析
+- 📚 LLM自动文档生成功能
+- 🤖 GitHub PR代码审查集成
+- 🎯 React前端界面
+
 ## 许可证
 
 MIT License - 详见 [LICENSE](LICENSE) 文件
@@ -372,8 +447,10 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 感谢以下开源项目：
 - [Spring AI](https://spring.io/projects/spring-ai) - AI集成框架
-- [Ant Design](https://ant.design/) - React UI组件库
+- [Apache Kafka](https://kafka.apache.org/) - 分布式消息队列
+- [Ant Design](https://ant.design/) - React UI组件库  
 - [阿里云百炼](https://bailian.console.aliyun.com/) - AI模型服务
+- [Mem0](https://github.com/mem0ai/mem0) - 个人AI记忆系统
 
 ## 联系方式
 
