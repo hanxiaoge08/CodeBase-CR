@@ -3,6 +3,7 @@ package com.hxg.queue.consumer;
 import com.hxg.queue.model.DocumentGenerationTask;
 import com.hxg.queue.producer.DocumentGenerationProducer;
 import com.hxg.queue.service.DocumentProcessingService;
+import com.hxg.queue.service.DocumentProcessingService.TaskDeletedException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -125,6 +126,10 @@ public class DocumentGenerationConsumer {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("任务处理被中断: taskId={}", task.getTaskId());
+        } catch (TaskDeletedException e) {
+            // 任务已删除，直接确认消息，不进行重试
+            log.info("任务已删除，跳过处理并确认消息: taskId={}, reason={}", task.getTaskId(), e.getMessage());
+            ack.acknowledge();
         } catch (Exception e) {
             log.error("任务处理失败: taskId={}, catalogueName={}, error={}", 
                     task.getTaskId(), task.getCatalogueName(), e.getMessage(), e);

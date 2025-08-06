@@ -24,11 +24,21 @@ public class FileSystemTool {
     // 从环境变量或线程变量中获取项目根路径
     private static final ThreadLocal<String> PROJECT_ROOT = new ThreadLocal<>();
     
+    // 缓存最近读取的文件路径，避免重复搜索
+    private static final ThreadLocal<java.util.Set<String>> READ_FILE_CACHE = ThreadLocal.withInitial(java.util.HashSet::new);
+    
     /**
      * 设置当前项目根路径
      */
     public static void setProjectRoot(String projectRoot) {
-        PROJECT_ROOT.set(projectRoot);
+        if (projectRoot != null && !projectRoot.trim().isEmpty()) {
+            PROJECT_ROOT.set(projectRoot.trim());
+            // 清空文件读取缓存
+            READ_FILE_CACHE.get().clear();
+            log.debug("设置项目根路径: {}", projectRoot);
+        } else {
+            log.warn("尝试设置空的项目根路径，已忽略");
+        }
     }
     
     /**
@@ -36,6 +46,31 @@ public class FileSystemTool {
      */
     public static void clearProjectRoot() {
         PROJECT_ROOT.remove();
+        READ_FILE_CACHE.remove();
+        log.debug("清除项目根路径ThreadLocal");
+    }
+    
+    /**
+     * 获取ThreadLocal状态信息（用于调试）
+     */
+    public static String getThreadLocalStatus() {
+        String projectRoot = PROJECT_ROOT.get();
+        java.util.Set<String> cache = READ_FILE_CACHE.get();
+        return String.format("ThreadLocal状态: projectRoot=%s, cacheSize=%d", 
+                projectRoot != null ? projectRoot : "null", cache.size());
+    }
+    
+    /**
+     * 强制重置ThreadLocal（用于异常恢复）
+     */
+    public static void forceResetThreadLocal() {
+        try {
+            PROJECT_ROOT.remove();
+            READ_FILE_CACHE.remove();
+            log.info("强制重置FileSystemTool ThreadLocal状态");
+        } catch (Exception e) {
+            log.warn("强制重置ThreadLocal时发生异常: {}", e.getMessage());
+        }
     }
     
     /**
@@ -43,10 +78,11 @@ public class FileSystemTool {
      */
     private String getProjectRoot() {
         String root = PROJECT_ROOT.get();
-        if (root == null) {
-            log.warn("项目根路径未设置，使用当前工作目录");
+        if (root == null || root.trim().isEmpty()) {
+            log.warn("项目根路径未设置或为空，使用当前工作目录: {}", System.getProperty("user.dir"));
             return System.getProperty("user.dir");
         }
+        log.debug("获取项目根路径: {}", root);
         return root;
     }
     
@@ -136,27 +172,44 @@ public class FileSystemTool {
      */
     @Tool(name = "readFile", description = "Read the content of the specified file")
     public String readFile(@ToolParam(description = "file path") String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            log.warn("❌ 文件路径为空");
+            return "错误：文件路径不能为空";
+        }
+        
+        String normalizedPath = filePath.trim();
+        
+        // 检查是否最近已经读取过相同文件，避免重复处理
+        java.util.Set<String> cache = READ_FILE_CACHE.get();
+        String cacheKey = normalizedPath + "@" + getProjectRoot();
+        
+        if (cache.contains(cacheKey)) {
+            log.debug("⚠️ 检测到重复读取文件: {} (项目根: {})", normalizedPath, getProjectRoot());
+        } else {
+            cache.add(cacheKey);
+        }
+        
         StringBuilder content = new StringBuilder();
         
         // 使用改进的文件查找逻辑
-        File file = findFile(filePath);
+        File file = findFile(normalizedPath);
         
         // 记录读取尝试
-        log.info("🔍 尝试读取文件: {}", filePath);
+        log.info("🔍 尝试读取文件: {} (项目根: {})", normalizedPath, getProjectRoot());
         log.debug("📁 文件绝对路径: {}", file.getAbsolutePath());
         log.debug("✅ 文件是否存在: {}", file.exists());
         
         if (!file.exists()) {
-            String errorMsg = String.format("文件不存在: %s (绝对路径: %s)", filePath, file.getAbsolutePath());
+            String errorMsg = String.format("文件不存在: %s (绝对路径: %s)", normalizedPath, file.getAbsolutePath());
             log.warn("❌ {}", errorMsg);
             // 对于不存在的文件，返回错误信息而不是抛出异常，让LLM知道文件不存在
-            return String.format("错误：文件不存在 - %s\n建议：请检查文件路径是否正确，或者该文件可能不在当前项目中。", filePath);
+            return String.format("错误：文件不存在 - %s\n建议：请检查文件路径是否正确，或者该文件可能不在当前项目中。", normalizedPath);
         }
         
         if (!file.canRead()) {
-            String errorMsg = String.format("文件无读取权限: %s", filePath);
+            String errorMsg = String.format("文件无读取权限: %s", normalizedPath);
             log.error("❌ {}", errorMsg);
-            return String.format("错误：文件无读取权限 - %s", filePath);
+            return String.format("错误：文件无读取权限 - %s", normalizedPath);
         }
         
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
@@ -164,11 +217,11 @@ public class FileSystemTool {
             while ((line = reader.readLine()) != null) {
                 content.append(line).append("\n");
             }
-            log.info("✅ 文件读取成功: {} (长度: {} 字符)", filePath, content.length());
+            log.info("✅ 文件读取成功: {} (长度: {} 字符)", normalizedPath, content.length());
         } catch (IOException e) {
-            String errorMsg = "读取文件失败: " + filePath + ", 错误: " + e.getMessage();
+            String errorMsg = "读取文件失败: " + normalizedPath + ", 错误: " + e.getMessage();
             log.error("❌ {}", errorMsg, e);
-            return String.format("错误：读取文件失败 - %s, 原因: %s", filePath, e.getMessage());
+            return String.format("错误：读取文件失败 - %s, 原因: %s", normalizedPath, e.getMessage());
         }
         return content.toString();
     }

@@ -5,7 +5,9 @@ import com.hxg.llm.prompt.GenDocPrompt;
 import com.hxg.llm.service.LlmService;
 import com.hxg.llm.tool.FileSystemTool;
 import com.hxg.mapper.CatalogueMapper;
+import com.hxg.mapper.TaskMapper;
 import com.hxg.model.entity.Catalogue;
+import com.hxg.model.entity.Task;
 import com.hxg.model.enums.CatalogueStatusEnum;
 import com.hxg.queue.model.DocumentGenerationTask;
 import com.hxg.service.IMemoryIntegrationService;
@@ -28,6 +30,7 @@ public class DocumentProcessingService {
     
     private final LlmService llmService;
     private final CatalogueMapper catalogueMapper;
+    private final TaskMapper taskMapper;
     private final IMemoryIntegrationService memoryIntegrationService;
     
     @Value("${project.wiki.prompt.doc-version}")
@@ -35,9 +38,11 @@ public class DocumentProcessingService {
     
     public DocumentProcessingService(LlmService llmService, 
                                    CatalogueMapper catalogueMapper,
+                                   TaskMapper taskMapper,
                                    IMemoryIntegrationService memoryIntegrationService) {
         this.llmService = llmService;
         this.catalogueMapper = catalogueMapper;
+        this.taskMapper = taskMapper;
         this.memoryIntegrationService = memoryIntegrationService;
         log.info("DocumentProcessingService initialized with docPromptVersion: {}", docPromptVersion);
     }
@@ -54,8 +59,30 @@ public class DocumentProcessingService {
         log.info("开始处理文档生成任务: taskId={}, catalogueName={}, retryCount={}", 
                 taskId, catalogueName, task.getRetryCount());
         
+        // 1. 首先检查任务是否还存在
+        Task existingTask = getTaskById(taskId);
+        if (existingTask == null) {
+            log.warn("任务已被删除，跳过处理: taskId={}, catalogueName={}", taskId, catalogueName);
+            throw new TaskDeletedException("任务已被删除: " + taskId);
+        }
+        
+        // 2. 检查目录记录是否存在
+        Catalogue existingCatalogue = catalogueMapper.selectOne(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Catalogue>()
+                .eq(Catalogue::getCatalogueId, task.getCatalogueId())
+        );
+        
+        if (existingCatalogue == null) {
+            log.warn("目录记录已被删除，跳过处理: taskId={}, catalogueId={}", taskId, task.getCatalogueId());
+            throw new TaskDeletedException("目录记录已被删除: " + task.getCatalogueId());
+        }
+        
+        // 先清理可能存在的旧ThreadLocal值
+        FileSystemTool.clearProjectRoot();
+        
         // 设置项目根路径到 ThreadLocal，供 FileSystemTool 使用
         FileSystemTool.setProjectRoot(task.getLocalPath());
+        log.debug("为任务 {} 设置项目根路径: {}", taskId, task.getLocalPath());
         
         try {
             // 获取对应版本的prompt模板
@@ -89,6 +116,9 @@ public class DocumentProcessingService {
             
             log.info("文档生成任务处理完成: taskId={}, catalogueName={}", taskId, catalogueName);
             
+        } catch (TaskDeletedException e) {
+            // 任务已删除异常，直接重新抛出，不需要更新状态
+            throw e;
         } catch (Exception e) {
             log.error("处理文档生成任务失败: taskId={}, catalogueName={}, error={}", 
                     taskId, catalogueName, e.getMessage(), e);
@@ -100,8 +130,13 @@ public class DocumentProcessingService {
             // 重新抛出异常，让消费者处理重试逻辑
             throw new RuntimeException("文档生成失败: " + e.getMessage(), e);
         } finally {
-            // 清理 ThreadLocal，避免内存泄漏
-            FileSystemTool.clearProjectRoot();
+            // 确保清理 ThreadLocal，避免内存泄漏和状态污染
+            try {
+                FileSystemTool.clearProjectRoot();
+                log.debug("任务 {} 完成，已清理ThreadLocal", taskId);
+            } catch (Exception cleanupError) {
+                log.warn("清理ThreadLocal时发生异常: taskId={}, error={}", taskId, cleanupError.getMessage());
+            }
         }
     }
     
@@ -211,6 +246,30 @@ public class DocumentProcessingService {
         } catch (Exception e) {
             log.warn("索引到Mem0记忆系统时发生异常: taskId={}, error={}", 
                     task.getTaskId(), e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 根据taskId查询任务
+     */
+    private Task getTaskById(String taskId) {
+        try {
+            return taskMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Task>()
+                    .eq(Task::getTaskId, taskId)
+            );
+        } catch (Exception e) {
+            log.error("查询任务失败: taskId={}, error={}", taskId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 任务已删除异常
+     */
+    public static class TaskDeletedException extends RuntimeException {
+        public TaskDeletedException(String message) {
+            super(message);
         }
     }
 }

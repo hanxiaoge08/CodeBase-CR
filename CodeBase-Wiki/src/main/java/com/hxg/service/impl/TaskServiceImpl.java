@@ -53,10 +53,12 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
         if ("git".equals(params.getSourceType())) {
             log.info("开始从Git仓库拉取项目");
             gitService.cloneRepository(params, localPath);
+            log.info("拉取项目成功");
         } else {
             log.info("开始解压ZIP文件");
             //解压到项目目录
             fileService.unzipToProjectDir(file, params.getUserName(), params.getProjectName());
+            log.info("解压ZIP文件成功");
         }
 
         Task task = insertTask(params);
@@ -72,7 +74,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
             try {
                 executeTask(context);
             } catch (Exception e) {
-                log.info("任务{}执行失败：{}", task.getTaskId(), e.getMessage());
+                log.error("任务{}执行失败：{}", task.getTaskId(), e.getMessage());
                 task.setStatus(TaskStatusEnum.FAILED);
                 task.setFailReason(e.getMessage());
                 task.setUpdateTime(LocalDateTime.now());
