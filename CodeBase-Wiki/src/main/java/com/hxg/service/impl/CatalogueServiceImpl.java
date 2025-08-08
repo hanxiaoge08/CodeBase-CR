@@ -60,7 +60,11 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
             case "v2" -> AnalyzeCataloguePrompt.promptV2;
             case "v3" -> AnalyzeCataloguePrompt.promptV3;
             case "v4" -> AnalyzeCataloguePrompt.promptV4;
-            default -> AnalyzeCataloguePrompt.promptV4;
+            case "v5" -> AnalyzeCataloguePrompt.promptV5;
+            default -> {
+                log.warn("未知的catalogue prompt版本: {}, 使用默认版本v5", cataloguePromptVersion);
+                yield AnalyzeCataloguePrompt.promptV5;
+            }
         };
         genCataloguePrompt = genCataloguePrompt
                 .replace("{{$code_files}}", fileTree)

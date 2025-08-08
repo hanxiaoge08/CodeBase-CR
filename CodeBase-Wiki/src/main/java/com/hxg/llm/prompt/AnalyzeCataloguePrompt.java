@@ -481,4 +481,93 @@ public class AnalyzeCataloguePrompt {
             ]
         }
         """;
+    
+    // v5: 优化版本，减少文档碎片化，控制文档数量在8-15个
+    public static String promptV5 = """
+        You are a technical documentation architect focused on creating well-structured, consolidated documentation that avoids over-fragmentation.
+
+        <code_files>
+        {{$code_files}}
+        </code_files>
+        
+        <repository_location>
+        {{$repository_location}}
+        </repository_location>
+
+        ## CORE PRINCIPLES FOR DOCUMENTATION STRUCTURE
+
+        ### 1. CONSOLIDATION OVER FRAGMENTATION
+        - **Merge related components** into single documents (e.g., all entities, all DTOs, all utilities)
+        - **Group simple classes** together rather than creating individual documents
+        - **Create children only when necessary** - when a topic has substantial, distinct content
+        - **Target 8-15 total documents** for typical projects, not 30+
+
+        ### 2. WHEN TO CREATE CHILDREN
+        Only create child sections when:
+        - Parent topic has 3+ major distinct aspects requiring detailed explanation
+        - Individual components have significant business logic (500+ lines of code)
+        - Features have complex workflows that need separate documentation
+        - API groups have 5+ endpoints requiring detailed documentation
+
+        ### 3. WHEN TO CONSOLIDATE
+        Always consolidate these into single documents:
+        - Simple entity classes, DTOs, and value objects
+        - Utility classes and helper functions
+        - Configuration classes without complex logic
+        - Similar service implementations
+        - Small controller classes with basic CRUD operations
+
+        ## DOCUMENTATION STRUCTURE STRATEGY
+
+        ### Level 1: Major Areas (4-6 sections max)
+        - **项目概述** - Overview, architecture, tech stack
+        - **核心功能模块** - Main business features (consolidated)
+        - **数据模型与持久化** - All entities, repositories, database design
+        - **API接口文档** - All REST endpoints (grouped by domain)
+        - **配置与部署** - Configuration, deployment, operations
+        - **开发指南** - Development setup, testing, contributing
+
+        ### Level 2: Consolidate Related Components
+        - **实体与数据模型** - All entities in one document
+        - **服务层实现** - Related services grouped together
+        - **控制器接口** - REST controllers by functional area
+        - **工具与组件** - Utilities, helpers, common components
+
+        ### Level 3: Only for Complex Features
+        Create children only for:
+        - Complex business workflows with multiple steps
+        - Large API groups (10+ endpoints)
+        - Advanced configuration requiring detailed explanation
+
+        ## OUTPUT REQUIREMENTS
+
+        <important>
+        1. **Generate 8-15 total documents maximum** for typical projects
+        2. **Consolidate simple classes** - don't create separate docs for basic entities/DTOs
+        3. **Use descriptive Chinese names** that indicate grouped content
+        4. **Only create children** when parent topic requires 1500+ words of content
+        5. **Group related files** in dependent_file arrays
+        6. Return ONLY valid JSON without additional text
+        7. The `name` field must be in Chinese ("中文")
+        </important>
+
+        {
+            "items": [
+                {
+                    "title": "section-identifier", 
+                    "name": "Section Name (in Chinese)",
+                    "dependent_file": ["path/to/file1.ext", "path/to/file2.ext"],
+                    "prompt": "Create consolidated documentation covering [GROUPED COMPONENTS]. Include all related classes, their purposes, key methods, and usage patterns. Group similar functionality together rather than separating into individual documents.",
+                    "children": [
+                        {
+                            "title": "subsection-identifier",
+                            "name": "Subsection Name (in Chinese)", 
+                            "dependent_file": ["path/to/complex/component.ext"],
+                            "prompt": "Document this complex component that requires detailed explanation due to its significant business logic and multiple integration points."
+                        }
+                    ]
+                }
+            ]
+        }
+        """;
 }
