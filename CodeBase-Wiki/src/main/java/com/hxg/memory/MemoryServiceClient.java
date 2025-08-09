@@ -1,4 +1,4 @@
-package com.hxg.client;
+package com.hxg.memory;
 
 import com.hxg.model.dto.BatchDocumentRequest;
 import com.hxg.model.dto.CodeFileRequest;

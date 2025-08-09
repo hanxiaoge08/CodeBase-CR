@@ -2,11 +2,10 @@ package com.hxg.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.hxg.context.ExecutionContext;
-import com.hxg.llm.prompt.GenDocPrompt;
+import com.hxg.model.context.ExecutionContext;
 import com.hxg.llm.service.LlmService;
 import com.hxg.llm.prompt.AnalyzeCataloguePrompt;
-import com.hxg.mapper.CatalogueMapper;
+import com.hxg.model.mapper.CatalogueMapper;
 import com.hxg.model.dto.CatalogueStruct;
 import com.hxg.model.dto.GenCatalogueDTO;
 import com.hxg.model.entity.Catalogue;

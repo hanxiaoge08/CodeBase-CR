@@ -1,4 +1,4 @@
-package com.hxg.mapper;
+package com.hxg.model.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hxg.model.entity.Catalogue;

@@ -1,4 +1,4 @@
-package com.hxg.filter;
+package com.hxg.utils.filter;
 
 import cn.hutool.core.lang.UUID;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;

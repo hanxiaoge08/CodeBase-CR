@@ -7,7 +7,7 @@ import com.hxg.llm.tool.FileSystemTool;
 import com.hxg.model.dto.CatalogueStruct;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.model.enums.CatalogueStatusEnum;
-import com.hxg.mapper.CatalogueMapper;
+import com.hxg.model.mapper.CatalogueMapper;
 import com.hxg.service.IMemoryIntegrationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
