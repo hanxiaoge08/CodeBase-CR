@@ -10,7 +10,7 @@ spring:
       api-key: ${DASHSCOPE_API_KEY}
       chat:
         options:
-          model: qwen-plus-2025-07-28
+          model: qwen3-coder-plus-2025-07-22
   application:
     name: CodeBase-Wiki
   datasource:
@@ -104,10 +104,10 @@ project:
   # Wiki文档生成配置
   wiki:
     prompt:
-      # 目录生成prompt版本 (v1, v2, v3)
-      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v4}
-      # 文档生成prompt版本 (v1, v2)
-      doc-version: ${WIKI_DOC_PROMPT_VERSION:v3}
+      # 目录生成prompt版本 (v1, v2, v3, v4, v5) - v5为优化版本，减少文档碎片化
+      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v5}
+      # 文档生成prompt版本 (v1, v2, v3, v4) - v4为精简版本，基于dependent_files优化
+      doc-version: ${WIKI_DOC_PROMPT_VERSION:v4}
     # Kafka消息队列配置
     kafka:
       topics:

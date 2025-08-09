@@ -1,6 +1,7 @@
 package com.hxg.queue.service;
 
 import com.alibaba.fastjson2.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hxg.llm.prompt.GenDocPrompt;
 import com.hxg.llm.service.LlmService;
 import com.hxg.llm.tool.FileSystemTool;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * @author hxg
@@ -68,7 +70,7 @@ public class DocumentProcessingService {
         
         // 2. 检查目录记录是否存在
         Catalogue existingCatalogue = catalogueMapper.selectOne(
-            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Catalogue>()
+            new LambdaQueryWrapper<Catalogue>()
                 .eq(Catalogue::getCatalogueId, task.getCatalogueId())
         );
         
@@ -93,6 +95,9 @@ public class DocumentProcessingService {
             
             // 构建完整的prompt
             prompt = buildPrompt(prompt, task);
+            
+            // 记录token消耗监控信息
+            logTokenUsageInfo(prompt, task);
             
             log.info("开始生成目录详情，使用prompt版本: {}, catalogueName: {}, promptLength: {}", 
                     docPromptVersion, catalogueName, prompt.length());
@@ -148,9 +153,10 @@ public class DocumentProcessingService {
             case "v1" -> GenDocPrompt.promptV1;
             case "v2" -> GenDocPrompt.promptV2;
             case "v3" -> GenDocPrompt.promptV3;
+            case "v4" -> GenDocPrompt.promptV4;
             default -> {
-                log.warn("未知的prompt版本: {}, 使用默认版本v3", version);
-                yield GenDocPrompt.promptV3;
+                log.warn("未知的prompt版本: {}, 使用默认版本v4", version);
+                yield GenDocPrompt.promptV4;
             }
         };
     }
@@ -159,12 +165,88 @@ public class DocumentProcessingService {
      * 构建完整的prompt
      */
     private String buildPrompt(String template, DocumentGenerationTask task) {
-        return template
-                .replace("{{repository_location}}", task.getLocalPath())
-                .replace("{{prompt}}", task.getPrompt())
-                .replace("{{title}}", task.getCatalogueName())
-                .replace("{{repository_files}}", task.getFileTree())
-                .replace("{{catalogue}}", JSON.toJSONString(task.getCatalogueStruct()));
+        // 对于v4版本的prompt，使用dependent_files而不是完整的fileTree
+        if ("v4".equals(docPromptVersion)) {
+            // 从任务中获取dependent_files信息
+            String dependentFiles = getDependentFilesString(task);
+            
+            return template
+                    .replace("{{repository_location}}", task.getLocalPath())
+                    .replace("{{prompt}}", task.getPrompt())
+                    .replace("{{title}}", task.getCatalogueName())
+                    .replace("{{dependent_files}}", dependentFiles);
+        } else {
+            // 传统版本使用完整数据
+            return template
+                    .replace("{{repository_location}}", task.getLocalPath())
+                    .replace("{{prompt}}", task.getPrompt())
+                    .replace("{{title}}", task.getCatalogueName())
+                    .replace("{{repository_files}}", task.getFileTree() != null ? task.getFileTree() : "")
+                    .replace("{{catalogue}}", JSON.toJSONString(task.getCatalogueStruct()));
+        }
+    }
+    
+    /**
+     * 从目录记录中获取dependent_files字符串
+     */
+    private String getDependentFilesString(DocumentGenerationTask task) {
+        try {
+            // 查询当前目录记录
+            Catalogue catalogue = catalogueMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Catalogue>()
+                    .eq(Catalogue::getCatalogueId, task.getCatalogueId())
+            );
+            
+            if (catalogue != null && StringUtils.hasText(catalogue.getDependentFile())) {
+                // 解析dependent_file JSON数组并格式化
+                try {
+                    List<String> files = JSON.parseArray(catalogue.getDependentFile(), String.class);
+                    return String.join(", ", files);
+                } catch (Exception e) {
+                    log.warn("解析dependent_file失败: {}", e.getMessage());
+                    return catalogue.getDependentFile();
+                }
+            }
+            
+            return "无特定依赖文件";
+            
+        } catch (Exception e) {
+            log.error("获取dependent_files失败: {}", e.getMessage());
+            return "获取文件信息失败";
+        }
+    }
+    
+    /**
+     * 记录Token使用监控信息
+     */
+    private void logTokenUsageInfo(String prompt, DocumentGenerationTask task) {
+        try {
+            int promptLength = prompt.length();
+            // 估算token数量（粗略估算：4个字符≈1个token）
+            int estimatedTokens = promptLength / 4;
+            
+            // 统计优化情况
+            boolean isOptimized = "v4".equals(docPromptVersion);
+            String optimizationType = isOptimized ? "优化版本(基于dependent_files)" : "传统版本(完整数据)";
+            
+            log.info("📊 Token使用监控 - taskId: {}, catalogueName: {}, " +
+                    "promptVersion: {}, optimizationType: {}, " +
+                    "promptLength: {}, estimatedTokens: {}", 
+                    task.getTaskId(), task.getCatalogueName(), 
+                    docPromptVersion, optimizationType,
+                    promptLength, estimatedTokens);
+            
+            // 如果是优化版本，记录节省的估算
+            if (isOptimized) {
+                String dependentFiles = getDependentFilesString(task);
+                log.info("🎯 Token优化详情 - dependentFiles: {}, " +
+                        "预计相比传统版本节省70-80%的token消耗", 
+                        dependentFiles);
+            }
+            
+        } catch (Exception e) {
+            log.warn("记录Token监控信息失败: {}", e.getMessage());
+        }
     }
     
     /**
@@ -174,7 +256,7 @@ public class DocumentProcessingService {
         try {
             // 查询现有记录
             Catalogue existingCatalogue = catalogueMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Catalogue>()
+                new LambdaQueryWrapper<Catalogue>()
                     .eq(Catalogue::getCatalogueId, catalogueId)
             );
             
@@ -255,7 +337,7 @@ public class DocumentProcessingService {
     private Task getTaskById(String taskId) {
         try {
             return taskMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Task>()
+                new LambdaQueryWrapper<Task>()
                     .eq(Task::getTaskId, taskId)
             );
         } catch (Exception e) {

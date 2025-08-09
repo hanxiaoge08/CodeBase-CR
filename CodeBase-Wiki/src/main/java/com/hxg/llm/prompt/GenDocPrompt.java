@@ -663,4 +663,36 @@ public class GenDocPrompt {
     - Don't hold back. Give it your all.
     </execution_notes>
     """;
+
+    // v4: 精简版prompt，基于dependent_files优化token消耗
+    public static final String promptV4 = """
+    # 技术文档生成器 (精简版)
+
+    为 {{title}} 生成精简技术文档（中文）。
+
+    ## 输入信息
+    - 项目路径: {{repository_location}}
+    - 相关文件: {{dependent_files}}
+    - 生成要求: {{prompt}}
+
+    ## 要求
+    1. 使用中文，控制在1500字内
+    2. 包含：功能概述、核心实现、使用示例
+    3. 使用readFile工具读取{{dependent_files}}中的文件
+    4. 包含关键代码片段
+
+    ## 输出格式
+    # {{title}}
+
+    ## 功能概述
+    [简要说明功能和作用]
+
+    ## 核心实现
+    [关键代码分析，包含代码片段]
+
+    ## 使用示例
+    [实际使用方法和配置]
+
+    直接输出markdown文档，无其他说明。
+    """;
 }

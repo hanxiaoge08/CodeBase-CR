@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
+@Deprecated
 public class CatalogueDetailAsyncService {
     @Value("${project.wiki.prompt.doc-version}")
     private String docPromptVersion;
