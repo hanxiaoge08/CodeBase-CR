@@ -2,7 +2,7 @@ package com.hxg.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.hxg.mapper.TaskMapper;
+import com.hxg.model.mapper.TaskMapper;
 import com.hxg.model.entity.Task;
 import com.hxg.model.enums.TaskStatusEnum;
 import com.hxg.model.param.CreateTaskParams;

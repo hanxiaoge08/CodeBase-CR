@@ -1,6 +1,6 @@
 package com.hxg.service.impl;
 
-import com.hxg.client.MemoryServiceClient;
+import com.hxg.memory.MemoryServiceClient;
 import com.hxg.model.dto.BatchDocumentRequest;
 import com.hxg.model.dto.CodeFileRequest;
 import com.hxg.model.dto.DocumentRequest;

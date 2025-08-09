@@ -2,6 +2,7 @@ package com.hxg.service.impl;
 
 import com.hxg.llm.service.LlmService;
 import com.hxg.model.dto.CatalogueStruct;
+import com.hxg.queue.producer.DocumentGenerationProducer;
 import com.hxg.service.ICatalogueService;
 import com.hxg.service.IFileService;
 import com.hxg.service.IMemoryIntegrationService;
@@ -32,13 +33,13 @@ class CatalogueServiceImplTest {
     private IMemoryIntegrationService memoryIntegrationService;
     
     @Mock
-    private CatalogueDetailAsyncService catalogueDetailAsyncService;
+    private DocumentGenerationProducer documentGenerationProducer;
 
     private ICatalogueService catalogueService;
 
     @BeforeEach
     void setUp() {
-        catalogueService = new CatalogueServiceImpl(llmService, memoryIntegrationService,catalogueDetailAsyncService);
+        catalogueService = new CatalogueServiceImpl(llmService, memoryIntegrationService,documentGenerationProducer);
     }
 
     @Test
