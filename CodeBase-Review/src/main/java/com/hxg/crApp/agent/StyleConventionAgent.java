@@ -3,6 +3,7 @@ package com.hxg.crApp.agent;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
 import com.hxg.crApp.dto.review.ReviewCommentDTO;
+import com.hxg.crApp.knowledge.RAGService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -31,6 +32,9 @@ public class StyleConventionAgent implements NodeAction {
 
     @Autowired
     private ChatClient chatClient;
+    
+    @Autowired
+    private RAGService ragService;
 
     // 规范规则定义
     private static final Map<String, String> NAMING_RULES = new HashMap<>();
@@ -72,10 +76,15 @@ public class StyleConventionAgent implements NodeAction {
 
         String diffContent = (String) state.value("diff_content").orElse("");
         String[] changedFiles = (String[]) state.value("changed_files").orElse(new String[0]);
+        String repoName = (String) state.value("repo_name").orElse("unknown");
 
         List<ReviewCommentDTO> styleIssues = new ArrayList<>();
 
-        // 分析每个文件的diff
+        // 1. 从知识库检索编码规范上下文
+        String styleGuideContext = retrieveStyleGuideContext(diffContent, repoName);
+        logger.debug("从知识库获取编码规范上下文: {}", styleGuideContext.substring(0, Math.min(200, styleGuideContext.length())) + "...");
+
+        // 2. 分析每个文件的diff
         Map<String, List<String>> fileChanges = parseDiffByFile(diffContent);
 
         for (Map.Entry<String, List<String>> entry : fileChanges.entrySet()) {
@@ -89,22 +98,9 @@ public class StyleConventionAgent implements NodeAction {
 
             logger.debug("检查文件规范: {}", filePath);
 
-            // 1. 检查命名规范
-            styleIssues.addAll(checkNamingConventions(filePath, changes));
+            // 3. 结合内置规则和知识库上下文进行审查
+            styleIssues.addAll(checkFileStyleConventions(filePath, changes, styleGuideContext));
 
-            // 2. 检查不推荐的API使用
-            styleIssues.addAll(checkDeprecatedApis(filePath, changes));
-
-            // 3. 检查代码坏味道
-            styleIssues.addAll(checkCodeSmells(filePath, changes));
-
-            // 4. 检查注释规范
-            styleIssues.addAll(checkCommentConventions(filePath, changes));
-
-            // 5. 使用LLM进行更深入的规范检查
-            if (changes.size() > 0) {
-                styleIssues.addAll(performLlmStyleCheck(filePath, changes));
-            }
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -408,5 +404,232 @@ public class StyleConventionAgent implements NodeAction {
             return previousLine.contains("*/") || previousLine.contains("*");
         }
         return false;
+    }
+    
+    /**
+     * 从知识库检索编码规范上下文
+     */
+    private String retrieveStyleGuideContext(String diffContent, String repoName) {
+        try {
+            // 构建查询prompt，专门用于编码规范查询
+            String codeSnippet = extractCodeSnippetForStyleCheck(diffContent);
+            
+            // 通过RAG服务查询编码规范知识库
+            String context = ragService.retrieveContext(codeSnippet, repoName);
+            
+            logger.debug("从RAG服务获取编码规范上下文成功: repo={}", repoName);
+            return context;
+            
+        } catch (Exception e) {
+            logger.warn("从知识库获取编码规范上下文失败: repo={}, error={}", repoName, e.getMessage());
+            
+            // 返回默认的编码规范上下文
+            return getDefaultStyleGuideContext();
+        }
+    }
+    
+    /**
+     * 从diff内容中提取代码片段用于规范检查
+     */
+    private String extractCodeSnippetForStyleCheck(String diffContent) {
+        StringBuilder codeSnippet = new StringBuilder();
+        int lineCount = 0;
+        
+        for (String line : diffContent.lines().toList()) {
+            // 只提取新增的代码行（+开头）和上下文行
+            if (line.startsWith("+") && !line.startsWith("+++")) {
+                codeSnippet.append(line.substring(1)).append("\n");
+                lineCount++;
+                
+                // 限制代码片段大小，避免查询过大
+                if (lineCount > 50) {
+                    codeSnippet.append("... (更多代码)\n");
+                    break;
+                }
+            }
+        }
+        
+        return codeSnippet.toString();
+    }
+    
+    /**
+     * 获取默认编码规范上下文
+     */
+    private String getDefaultStyleGuideContext() {
+        return """
+            编码规范要求：
+            1. 命名规范：
+               - 类名：大驼峰命名法 (PascalCase)
+               - 方法名：小驼峰命名法 (camelCase)
+               - 变量名：小驼峰命名法 (camelCase)
+               - 常量名：全大写，下划线分隔 (UPPER_SNAKE_CASE)
+               - 包名：全小写，点分隔
+            
+            2. 代码格式：
+               - 使用4个空格缩进，不使用Tab
+               - 每行代码长度不超过120个字符
+               - 大括号采用K&R风格
+               - 方法之间空一行分隔
+            
+            3. 注释规范：
+               - 公共方法必须有JavaDoc注释
+               - 复杂逻辑需要行内注释说明
+               - 类和接口必须有类注释
+            
+            4. 避免使用：
+               - 过时的API（如java.util.Date）
+               - 魔法数字，应定义为常量
+               - 过长的方法（超过50行）
+               - 深层嵌套（超过3层）
+            
+            5. 代码质量：
+               - 遵循单一职责原则
+               - 避免重复代码
+               - 使用有意义的变量名
+               - 及时清理TODO和FIXME注释
+            """;
+    }
+    
+    /**
+     * 结合内置规则和知识库上下文检查文件编码规范
+     */
+    private List<ReviewCommentDTO> checkFileStyleConventions(String filePath, List<String> changes, String styleGuideContext) {
+        List<ReviewCommentDTO> issues = new ArrayList<>();
+        
+        try {
+            // 使用LLM结合知识库上下文和内置规则进行深度分析
+            String codeContent = String.join("\n", changes);
+            
+            String analysisPrompt = String.format("""
+                作为代码审查专家，请基于以下编码规范对代码变更进行详细审查：
+                
+                【编码规范上下文】
+                %s
+                
+                【文件路径】
+                %s
+                
+                【代码变更】
+                ```java
+                %s
+                ```
+                
+                请重点检查：
+                1. 命名规范是否符合要求
+                2. 代码格式是否规范  
+                3. 是否使用了不推荐的API或模式
+                4. 注释是否完整和规范
+                5. 代码是否存在明显的质量问题
+                
+                对于发现的问题，请以JSON数组格式返回，每个问题包含：
+                - type: 问题类型 (NAMING, FORMAT, API, COMMENT, QUALITY)
+                - level: 严重级别 (ERROR, WARNING, INFO) 
+                - message: 问题描述
+                - suggestion: 改进建议
+                - line: 大概的行号(如果能确定)
+                
+                如果没有发现问题，返回空数组 []
+                """, styleGuideContext, filePath, codeContent);
+            
+            String response = chatClient.prompt()
+                .user(analysisPrompt)
+                .call()
+                .content();
+            
+            // 解析LLM返回的结果并转换为ReviewCommentDTO
+            issues.addAll(parseStyleIssuesFromLLMResponse(response, filePath));
+            
+        } catch (Exception e) {
+            logger.error("使用LLM分析编码规范时发生错误: file={}, error={}", filePath, e.getMessage());
+            
+            // LLM分析失败时，回退到内置规则检查
+            issues.addAll(checkNamingConventions(filePath, changes));
+            issues.addAll(checkDeprecatedApis(filePath, changes));
+            issues.addAll(checkCodeSmells(filePath, changes));
+        }
+        
+        return issues;
+    }
+    
+    /**
+     * 解析LLM返回的编码规范问题
+     */
+    private List<ReviewCommentDTO> parseStyleIssuesFromLLMResponse(String response, String filePath) {
+        List<ReviewCommentDTO> issues = new ArrayList<>();
+        
+        try {
+            // 简单的JSON解析（实际项目中建议使用Jackson等库）
+            if (response.trim().equals("[]") || !response.contains("type")) {
+                return issues; // 没有发现问题
+            }
+            
+            // 提取JSON内容
+            String jsonContent = response;
+            if (response.contains("```json")) {
+                int start = response.indexOf("```json") + 7;
+                int end = response.indexOf("```", start);
+                if (end > start) {
+                    jsonContent = response.substring(start, end).trim();
+                }
+            }
+            
+            // 分割多个问题项（简化处理）
+            String[] problemSections = jsonContent.split("\\},\\s*\\{");
+            
+            for (String section : problemSections) {
+                section = section.replace("[{", "{").replace("}]", "}").replace("{", "").replace("}", "");
+                
+                Map<String, String> problemData = new HashMap<>();
+                for (String pair : section.split(",")) {
+                    if (pair.contains(":")) {
+                        String[] kv = pair.split(":", 2);
+                        String key = kv[0].trim().replace("\"", "");
+                        String value = kv[1].trim().replace("\"", "");
+                        problemData.put(key, value);
+                    }
+                }
+                
+                if (problemData.containsKey("type") && problemData.containsKey("message")) {
+                    // 构建审查评论，结合消息和建议
+                    String fullComment = problemData.get("message");
+                    String suggestion = problemData.getOrDefault("suggestion", "");
+                    if (!suggestion.isEmpty()) {
+                        fullComment += "\n建议：" + suggestion;
+                    }
+                    
+                    ReviewCommentDTO issue = ReviewCommentDTO.builder()
+                        .filePath(filePath)
+                        .lineNumber(parseLineNumber(problemData.get("line")))
+                        .comment(fullComment)
+                        .severity(mapLevelToSeverity(problemData.get("level")))
+                        .build();
+                    
+                    issues.add(issue);
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.warn("解析LLM编码规范分析结果失败: {}", e.getMessage());
+        }
+        
+        return issues;
+    }
+    
+    private int parseLineNumber(String lineStr) {
+        try {
+            return lineStr != null ? Integer.parseInt(lineStr.trim()) : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+    
+    private ReviewCommentDTO.Severity mapLevelToSeverity(String level) {
+        if (level == null) return ReviewCommentDTO.Severity.INFO;
+        
+        return switch (level.toUpperCase()) {
+            case "ERROR" -> ReviewCommentDTO.Severity.ERROR;
+            case "WARNING" -> ReviewCommentDTO.Severity.WARNING;
+            default -> ReviewCommentDTO.Severity.INFO;
+        };
     }
 }

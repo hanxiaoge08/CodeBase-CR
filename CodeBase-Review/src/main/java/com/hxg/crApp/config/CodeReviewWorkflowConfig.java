@@ -32,6 +32,7 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
  *    - PR过大/无效 -> 直接结束
  * 3. 三个专家Agent并行执行：StyleConventionAgent, LogicContextAgent, SecurityScanAgent
  * 4. 专家Agent完成 -> ReportSynthesizerAgent -> END
+ * @author hxg
  */
 @Configuration
 public class CodeReviewWorkflowConfig {
