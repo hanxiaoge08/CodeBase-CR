@@ -60,6 +60,17 @@ public class RAGService {
                 .build();
     }
 
+    /**
+     * 导入并处理文档到向量存储
+     * 
+     * 该方法负责将Spring AI Alibaba快速入门文档导入到DashScope云存储中，
+     * 以便后续进行向量检索和RAG操作。
+     * 
+     * 执行流程：
+     * 1. 将资源文件保存为临时文件
+     * 2. 使用DashScope文档云读取器读取并分割文档
+     * 3. 将文档添加到DashScope云向量存储中
+     */
     public void importDocuments() {
         String path = saveToTempFile(springAiResource);
 
