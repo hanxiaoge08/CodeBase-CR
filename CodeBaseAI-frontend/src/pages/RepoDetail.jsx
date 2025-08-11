@@ -1,16 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Layout,
   Tree,
   Typography, 
   Button, 
   Space, 
-  Breadcrumb,
+  Input,
   Tag,
   Spin,
   Alert,
-  Card,
-  Divider
+  Tooltip,
+  Drawer,
+  Affix,
+  Empty,
+  Divider,
+  BackTop,
+  ConfigProvider
 } from 'antd';
 import { 
   GithubOutlined, 
@@ -18,108 +23,61 @@ import {
   HomeOutlined,
   ShareAltOutlined,
   FileTextOutlined,
-  FolderOutlined
+  FolderOutlined,
+  SearchOutlined,
+  MenuOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  SunOutlined,
+  MoonOutlined,
+  ArrowLeftOutlined,
+  BookOutlined,
+  UnorderedListOutlined,
+  ClockCircleOutlined,
+  EyeOutlined,
+  CopyOutlined,
+  CheckOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import 'highlight.js/styles/github.css'; // 代码高亮样式
+import 'highlight.js/styles/github-dark.css';
 import { TaskApi } from '../api/task';
 import { formatDateTime } from '../utils/dateFormat';
 import PageLoading from '../components/PageLoading';
 import MermaidChart from '../components/MermaidChart';
+import ChatWidget from '../components/ChatWidget';
 
 const { Title, Text, Paragraph } = Typography;
-const { Sider, Content } = Layout;
-
-// Markdown 自定义样式
-const markdownStyles = {
-  container: {
-    lineHeight: 1.8,
-    fontSize: '14px',
-    color: '#262626'
-  },
-  heading: {
-    marginTop: '24px',
-    marginBottom: '16px',
-    borderBottom: '1px solid #f0f0f0',
-    paddingBottom: '8px'
-  },
-  blockquote: {
-    borderLeft: '4px solid #1890ff',
-    paddingLeft: '16px',
-    margin: '16px 0',
-    background: '#f6f8fa',
-    padding: '16px',
-    borderRadius: '6px'
-  },
-  inlineCode: {
-    background: '#f6f8fa',
-    padding: '2px 6px',
-    borderRadius: '3px',
-    fontSize: '13px',
-    color: '#d73a49',
-    fontFamily: '"SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", "monospace"',
-    border: '1px solid #e1e4e8',
-    verticalAlign: 'baseline'
-  },
-  codeBlock: {
-    background: '#f6f8fa',
-    padding: '16px',
-    borderRadius: '6px',
-    overflow: 'auto',
-    fontSize: '13px',
-    fontFamily: '"SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", "monospace"',
-    border: '1px solid #e1e4e8'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    border: '1px solid #d9d9d9',
-    marginTop: '16px',
-    marginBottom: '16px'
-  },
-  th: {
-    border: '1px solid #d9d9d9',
-    padding: '12px 16px',
-    background: '#fafafa',
-    fontWeight: 'bold',
-    textAlign: 'left'
-  },
-  td: {
-    border: '1px solid #d9d9d9',
-    padding: '12px 16px'
-  },
-  list: {
-    paddingLeft: '20px',
-    margin: '16px 0'
-  },
-  listItem: {
-    marginBottom: '6px'
-  }
-};
+const { Sider, Content, Header } = Layout;
+const { Search } = Input;
 
 const RepoDetail = () => {
   const navigate = useNavigate();
   const { taskId } = useParams();
-  const { darkMode } = useOutletContext();
+  const { darkMode, toggleDarkMode } = useOutletContext();
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState(null);
   const [catalogueTree, setCatalogueTree] = useState([]);
   const [selectedContent, setSelectedContent] = useState('');
   const [selectedTitle, setSelectedTitle] = useState('');
   const [error, setError] = useState('');
-  const [treeLoading, setTreeLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState([]);
+  const [collapsed, setCollapsed] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [mobileDrawerVisible, setMobileDrawerVisible] = useState(false);
+  const [anchors, setAnchors] = useState([]);
+  const [activeAnchor, setActiveAnchor] = useState('');
+  const [copied, setCopied] = useState(false);
+  const contentRef = useRef(null);
 
   // 获取任务详情和目录树
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 并行获取任务详情和目录树
         const [taskResponse, treeResponse] = await Promise.all([
           TaskApi.getTaskDetail(taskId),
           TaskApi.getCatalogueTree(taskId)
@@ -136,13 +94,11 @@ const RepoDetail = () => {
           const treeData = buildTreeData(treeResponse.data);
           setCatalogueTree(treeData);
           
-          // 初始时展开所有一级节点（只展开第一层）
           const firstLevelKeys = treeResponse.data
             .filter(item => item.children && item.children.length > 0)
             .map(item => item.catalogueId);
           setExpandedKeys(firstLevelKeys);
           
-          // 默认选择第一个有内容的叶子节点
           const firstLeaf = findFirstLeafWithContent(treeResponse.data);
           if (firstLeaf) {
             setSelectedContent(firstLeaf.content || '');
@@ -167,6 +123,24 @@ const RepoDetail = () => {
     }
   }, [taskId]);
 
+  // 提取文章大纲
+  useEffect(() => {
+    if (selectedContent) {
+      const headings = [];
+      const lines = selectedContent.split('\n');
+      lines.forEach((line, index) => {
+        const match = line.match(/^(#{1,3})\s+(.+)/);
+        if (match) {
+          const level = match[1].length;
+          const title = match[2];
+          const id = `heading-${index}`;
+          headings.push({ id, title, level });
+        }
+      });
+      setAnchors(headings);
+    }
+  }, [selectedContent]);
+
   // 构建树形数据结构
   const buildTreeData = (data) => {
     const buildNode = (item, level = 0) => ({
@@ -175,9 +149,9 @@ const RepoDetail = () => {
       icon: item.children && item.children.length > 0 ? <FolderOutlined /> : <FileTextOutlined />,
       content: item.content,
       name: item.name,
-      level: level, // 添加层级信息
+      level: level,
       isLeaf: !item.children || item.children.length === 0,
-      isParent: item.children && item.children.length > 0, // 是否为父节点
+      isParent: item.children && item.children.length > 0,
       children: item.children ? item.children.map(child => buildNode(child, level + 1)) : []
     });
 
@@ -211,13 +185,18 @@ const RepoDetail = () => {
     return null;
   };
 
-  // 处理节点选择 - 只有叶子节点才显示内容
+  // 处理节点选择
   const handleTreeSelect = (selectedKeys) => {
     if (selectedKeys.length > 0) {
       const nodeData = findNodeContent(catalogueTree, selectedKeys[0]);
       if (nodeData && !nodeData.isParent) {
         setSelectedContent(nodeData.content || '暂无内容');
         setSelectedTitle(nodeData.title || '');
+        setMobileDrawerVisible(false);
+        // 滚动到顶部
+        if (contentRef.current) {
+          contentRef.current.scrollTop = 0;
+        }
       }
     }
   };
@@ -225,6 +204,19 @@ const RepoDetail = () => {
   // 处理节点展开收缩
   const handleTreeExpand = (expandedKeysValue) => {
     setExpandedKeys(expandedKeysValue);
+  };
+
+  // 搜索过滤树节点
+  const filterTreeNode = (node) => {
+    if (!searchValue) return true;
+    return node.title.toLowerCase().includes(searchValue.toLowerCase());
+  };
+
+  // 复制链接
+  const handleCopyLink = () => {
+    navigator.clipboard?.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   // 随机生成星星数
@@ -240,14 +232,20 @@ const RepoDetail = () => {
   // 渲染错误状态
   if (error) {
     return (
-      <div style={{ padding: '20px' }}>
+      <div style={{ 
+        height: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        padding: '20px' 
+      }}>
         <Alert
           message="错误"
           description={error}
           type="error"
           showIcon
           action={
-            <Button size="small" type="primary" onClick={() => navigate('/')}>
+            <Button type="primary" onClick={() => navigate('/')}>
               返回首页
             </Button>
           }
@@ -261,592 +259,503 @@ const RepoDetail = () => {
     ? task.projectUrl.split('github.com/')[1]?.split('/').slice(0, 2).join(' / ')
     : task?.projectName;
 
-  return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* 页面头部 */}
-      <div style={{ 
-        padding: '16px 24px', 
-        borderBottom: darkMode ? '1px solid #303030' : '1px solid #f0f0f0',
-        background: darkMode ? '#1f1f1f' : '#fff',
-        flexShrink: 0
-      }}>
-        <Breadcrumb style={{ marginBottom: 16 }}>
-          <Breadcrumb.Item href="/" onClick={(e) => {
-            e.preventDefault();
-            navigate('/');
-          }}>
-            <HomeOutlined /> 首页
-          </Breadcrumb.Item>
-          <Breadcrumb.Item>{repoName}</Breadcrumb.Item>
-        </Breadcrumb>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Space direction="vertical" size="small">
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <GithubOutlined style={{ fontSize: 20, marginRight: 8 }} />
-              <Title level={4} style={{ margin: 0 }}>{repoName}</Title>
-            </div>
-            <Space size="large">
-              <Tag icon={<StarOutlined />} color="default">
-                {getRandomStars()}k stars
-              </Tag>
-              <Text type="secondary">
-                更新于 {formatDateTime(task?.updateTime, 'YYYY-MM-DD')}
-              </Text>
-            </Space>
-          </Space>
-          
-          <Space>
-            <Button 
-              type="primary" 
-              icon={<ShareAltOutlined />}
-              onClick={() => navigator.clipboard?.writeText(window.location.href)}
-            >
-              分享
-            </Button>
-            <Button
-              href={task?.projectUrl}
-              target="_blank"
-              icon={<GithubOutlined />}
-            >
-              查看源码
-            </Button>
-          </Space>
-        </div>
+  // 侧边栏渲染
+  const renderSidebar = () => (
+    <div style={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column',
+      background: darkMode ? '#141414' : '#fff'
+    }}>
+      {/* 搜索框 */}
+      <div style={{ padding: '16px' }}>
+        <Search
+          placeholder="搜索文档..."
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
+          style={{ width: '100%' }}
+          prefix={<SearchOutlined />}
+          allowClear
+        />
       </div>
+      
+      {/* 目录树 */}
+      <div style={{ 
+        flex: 1, 
+        overflow: 'auto', 
+        padding: '0 8px 16px'
+      }}>
+        {catalogueTree.length > 0 ? (
+          <Tree
+            expandedKeys={expandedKeys}
+            onExpand={handleTreeExpand}
+            onSelect={handleTreeSelect}
+            treeData={catalogueTree}
+            filterTreeNode={filterTreeNode}
+            showIcon
+            style={{ 
+              fontSize: '14px',
+              background: 'transparent'
+            }}
+            className="custom-wiki-tree"
+          />
+        ) : (
+          <Empty 
+            description="暂无目录数据" 
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        )}
+      </div>
+    </div>
+  );
 
-      {/* 主体布局 */}
-      <Layout style={{ flex: 1, minHeight: 0 }}>
-        {/* 左侧目录树 */}
-        <Sider 
-          width={280} 
+  return (
+    <ConfigProvider
+      theme={{
+        token: {
+          colorBgContainer: darkMode ? '#1f1f1f' : '#fff',
+          colorBgLayout: darkMode ? '#141414' : '#f5f5f5',
+          colorText: darkMode ? '#ffffffd9' : '#000000d9',
+        }
+      }}
+    >
+      <Layout style={{ height: '100vh' }}>
+        {/* 顶部导航栏 */}
+        <Header 
           style={{ 
             background: darkMode ? '#1f1f1f' : '#fff',
-            borderRight: darkMode ? '1px solid #303030' : '1px solid #f0f0f0',
-            height: '100%',
-            overflow: 'hidden'
+            borderBottom: darkMode ? '1px solid #303030' : '1px solid #f0f0f0',
+            padding: '0 24px',
+            height: '56px',
+            lineHeight: '56px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
           }}
         >
-          <div style={{ padding: '12px 8px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, overflow: 'auto', paddingRight: '4px' }}>
-              {catalogueTree.length > 0 ? (
-                <>
-                  <style>
-                    {`
-                      /* 基础树节点样式 */
-                      .custom-tree .ant-tree-treenode {
-                        padding: 2px 0 !important;
-                        margin: 0 !important;
-                      }
-                      
-                      .custom-tree .ant-tree-node-content-wrapper {
-                        padding: 6px 8px !important;
-                        border-radius: 4px !important;
-                        transition: all 0.15s ease !important;
-                        margin: 0 !important;
-                        height: 32px !important;
-                        line-height: 1.5 !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        box-sizing: border-box !important;
-                      }
-                      
-                      .custom-tree .ant-tree-node-content-wrapper:hover {
-                        background-color: ${darkMode ? '#2a2a2a' : '#f5f5f5'} !important;
-                      }
-                      
-                      .custom-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
-                        background-color: ${darkMode ? '#1f3a5f' : '#e6f7ff'} !important;
-                        border: 1px solid ${darkMode ? '#4096ff' : '#91d5ff'} !important;
-                        box-shadow: 0 1px 2px rgba(24, 144, 255, 0.08) !important;
-                      }
-                      
-                      /* 展开折叠按钮样式 */
-                      .custom-tree .ant-tree-switcher {
-                        width: 20px !important;
-                        height: 20px !important;
-                        line-height: 20px !important;
-                        margin-right: 6px !important;
-                        border-radius: 3px !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        justify-content: center !important;
-                        flex-shrink: 0 !important;
-                        vertical-align: top !important;
-                      }
-                      
-                      .custom-tree .ant-tree-switcher:hover {
-                        background-color: #f0f0f0 !important;
-                      }
-                      
-                      .custom-tree .ant-tree-switcher-icon {
-                        font-size: 12px !important;
-                        transform: none !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        justify-content: center !important;
-                      }
-                      
-                      /* 隐藏图标 */
-                      .custom-tree .ant-tree-iconEle {
-                        display: none !important;
-                      }
-                      
-                      /* 一级标题样式 */
-                      .custom-tree .tree-title-level-0 {
-                        font-size: 15px !important;
-                        font-weight: 600 !important;
-                        color: ${darkMode ? '#ffffff' : '#262626'} !important;
-                        cursor: pointer !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        line-height: 1.5 !important;
-                        height: 20px !important;
-                      }
-                      
-                      /* 二级标题样式 */
-                      .custom-tree .tree-title-level-1 {
-                        font-size: 14px !important;
-                        font-weight: 400 !important;
-                        color: ${darkMode ? '#d9d9d9' : '#595959'} !important;
-                        cursor: pointer !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        line-height: 1.5 !important;
-                        height: 20px !important;
-                      }
-                      
-                      /* 二级标题前的小圆点 */
-                      .custom-tree .tree-title-level-1::before {
-                        content: "•" !important;
-                        margin-right: 6px !important;
-                        font-size: 12px !important;
-                        color: #bfbfbf !important;
-                        line-height: 1 !important;
-                        display: flex !important;
-                        align-items: center !important;
-                      }
-                      
-                      /* 子树缩进和连线 */
-                      .custom-tree .ant-tree-child-tree {
-                        margin-left: 16px !important;
-                        border-left: 1px dashed #e8e8e8 !important;
-                        padding-left: 8px !important;
-                      }
-                      
-                      /* 一级节点禁用选中 */
-                      .custom-tree .tree-title-level-0.tree-parent-title {
-                        pointer-events: none !important;
-                      }
-                      
-                      .custom-tree .ant-tree-treenode:has(.tree-title-level-0) .ant-tree-node-content-wrapper.ant-tree-node-selected {
-                        background-color: transparent !important;
-                        border: none !important;
-                        box-shadow: none !important;
-                      }
-                      
-                      .custom-tree .ant-tree-treenode:has(.tree-title-level-0) .ant-tree-node-content-wrapper:hover {
-                        background-color: #f8f8f8 !important;
-                      }
-                      
-                      /* 树节点间距优化 */
-                      .custom-tree .ant-tree-list-holder-inner {
-                        padding: 4px 0 !important;
-                      }
-                      
-                      /* 叶子节点样式 */
-                      .custom-tree .ant-tree-treenode-leaf-last .ant-tree-node-content-wrapper {
-                        margin-bottom: 0 !important;
-                      }
-                      
-                      /* 内容区域滚动条样式 */
-                      .ant-card-body::-webkit-scrollbar {
-                        width: 8px;
-                      }
-                      
-                      .ant-card-body::-webkit-scrollbar-track {
-                        background: #f5f5f5;
-                        border-radius: 4px;
-                      }
-                      
-                      .ant-card-body::-webkit-scrollbar-thumb {
-                        background: #bfbfbf;
-                        border-radius: 4px;
-                      }
-                      
-                      .ant-card-body::-webkit-scrollbar-thumb:hover {
-                        background: #999;
-                      }
-                    `}
-                  </style>
-              <Tree
-                    expandedKeys={expandedKeys}
-                    onExpand={handleTreeExpand}
-                onSelect={handleTreeSelect}
-                treeData={catalogueTree}
-                    className="custom-tree"
-                    selectable={true}
-                    titleRender={(nodeData) => (
-                      <span 
-                        className={`tree-title-level-${nodeData.level} ${nodeData.isParent ? 'tree-parent-title' : ''}`}
-                      >
-                        {nodeData.title}
-                      </span>
-                    )}
-                style={{ fontSize: '14px' }}
-              />
-                </>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <Spin spinning={treeLoading}>
-                  <Text type="secondary">暂无目录数据</Text>
-                </Spin>
-              </div>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* 移动端菜单按钮 */}
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              onClick={() => setMobileDrawerVisible(true)}
+              style={{ display: window.innerWidth < 768 ? 'block' : 'none' }}
+            />
+            
+            {/* Logo和标题 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BookOutlined style={{ fontSize: '20px', color: '#1890ff' }} />
+              <Title level={5} style={{ margin: 0, fontWeight: 600 }}>
+                {repoName || 'Wiki'}
+              </Title>
             </div>
-          </div>
-        </Sider>
 
-        {/* 右侧内容区域 */}
-        <Content style={{ 
-          padding: '24px',
-          background: darkMode ? '#1f1f1f' : '#fff',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          overflow: 'hidden'
-        }}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}
+            {/* 桌面端折叠按钮 */}
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ display: window.innerWidth >= 768 ? 'block' : 'none' }}
+            />
+          </div>
+
+          <Space>
+            {/* 主题切换 */}
+            <Tooltip title={darkMode ? '切换到亮色主题' : '切换到暗色主题'}>
+              <Button
+                type="text"
+                icon={darkMode ? <SunOutlined /> : <MoonOutlined />}
+                onClick={toggleDarkMode}
+              />
+            </Tooltip>
+            
+            {/* GitHub链接 */}
+            <Tooltip title="查看源码">
+              <Button
+                type="text"
+                icon={<GithubOutlined />}
+                href={task?.projectUrl}
+                target="_blank"
+              />
+            </Tooltip>
+            
+            {/* 分享按钮 */}
+            <Tooltip title={copied ? '已复制' : '复制链接'}>
+              <Button
+                type="text"
+                icon={copied ? <CheckOutlined /> : <ShareAltOutlined />}
+                onClick={handleCopyLink}
+              />
+            </Tooltip>
+            
+            {/* 返回首页 */}
+            <Tooltip title="返回首页">
+              <Button
+                type="text"
+                icon={<HomeOutlined />}
+                onClick={() => navigate('/')}
+              />
+            </Tooltip>
+          </Space>
+        </Header>
+
+        <Layout>
+          {/* 侧边栏 - 桌面端 */}
+          <Sider 
+            width={280}
+            collapsible
+            collapsed={collapsed}
+            trigger={null}
+            style={{ 
+              background: darkMode ? '#141414' : '#fff',
+              borderRight: darkMode ? '1px solid #303030' : '1px solid #f0f0f0',
+              overflow: 'hidden',
+              display: window.innerWidth < 768 ? 'none' : 'block'
+            }}
           >
-            <Card 
-              title={
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <FileTextOutlined style={{ marginRight: 8 }} />
-                  {selectedTitle || '选择左侧目录查看内容'}
-                </div>
-              }
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-              bodyStyle={{ 
-                flex: 1, 
-                overflow: 'auto', 
+            {renderSidebar()}
+          </Sider>
+
+          {/* 侧边栏 - 移动端 */}
+          <Drawer
+            title="文档目录"
+            placement="left"
+            open={mobileDrawerVisible}
+            onClose={() => setMobileDrawerVisible(false)}
+            width={280}
+            bodyStyle={{ padding: 0 }}
+          >
+            {renderSidebar()}
+          </Drawer>
+
+          {/* 主内容区 */}
+          <Layout style={{ background: darkMode ? '#141414' : '#f5f5f5' }}>
+            <Content 
+              style={{ 
                 padding: '24px',
-                height: 0,
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#bfbfbf #f5f5f5'
+                overflow: 'auto',
+                position: 'relative'
               }}
+              ref={contentRef}
             >
-                            {selectedContent ? (
-                <div 
-                  style={markdownStyles.container}
-                  className="markdown-content"
+              <div style={{ 
+                maxWidth: '1200px', 
+                margin: '0 auto',
+                display: 'flex',
+                gap: '24px'
+              }}>
+                {/* 文章内容 */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  style={{ flex: 1, minWidth: 0 }}
                 >
-                  <style>
-                    {`
-                      .markdown-content code:not(pre code) {
-                        display: inline !important;
-                        padding: 0 3px !important;
-                        margin: 0 !important;
-                        background: #f8f8f8 !important;
-                        color: #e83e8c !important;
-                        border-radius: 3px !important;
-                        font-size: 0.9em !important;
-                        line-height: inherit !important;
-                        white-space: nowrap !important;
-                        vertical-align: baseline !important;
-                        border: none !important;
-                        box-sizing: border-box !important;
-                      }
-                    `}
-                  </style>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeHighlight]}
-                    components={{
-                      // 测试函数，打印所有代码块
-                      code: ({node, inline, className = '', children, ...props}) => {
-                        console.log('Code block detected:', { inline, className, children });
-                        
-                        // 只处理内联代码，让pre组件处理代码块
-                        if (inline) {
-                          return (
-                            <code 
-                              style={{
-                                background: '#f8f8f8',
-                                padding: '0 3px',
-                                margin: '0',
-                                borderRadius: '3px',
-                                fontSize: '0.9em',
-                                color: '#e83e8c',
-                                fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                                display: 'inline',
-                                lineHeight: 'inherit',
-                                whiteSpace: 'nowrap',
-                                verticalAlign: 'baseline',
-                                border: 'none',
-                                boxSizing: 'border-box'
-                              }}
-                              className={className}
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          );
-                        }
-                        
-                        // 非内联代码由pre组件处理
-                        return (
-                          <code 
-                            style={{
-                              background: 'transparent',
-                              padding: '0',
-                              margin: '0',
-                              borderRadius: '0',
-                              fontSize: 'inherit',
-                              color: 'inherit',
-                              fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                              display: 'block',
-                              lineHeight: '1.45',
-                              whiteSpace: 'pre',
-                              verticalAlign: 'baseline',
-                              border: 'none',
-                              boxSizing: 'border-box'
-                            }}
-                            className={className}
-                            {...props}
-                          >
-                            {children}
-                          </code>
-                        );
-                      },
-                      // 自定义渲染组件
-                      h1: ({children}) => (
-                        <Typography.Title 
-                          level={2} 
-                          style={markdownStyles.heading}
-                        >
-                          {children}
-                        </Typography.Title>
-                      ),
-                      h2: ({children}) => (
-                        <Typography.Title 
-                          level={3} 
-                          style={markdownStyles.heading}
-                        >
-                          {children}
-                        </Typography.Title>
-                      ),
-                      h3: ({children}) => (
-                        <Typography.Title 
-                          level={4} 
-                          style={markdownStyles.heading}
-                        >
-                          {children}
-                        </Typography.Title>
-                      ),
-                      h4: ({children}) => (
-                        <Typography.Title 
-                          level={5}
-                          style={markdownStyles.heading}
-                        >
-                          {children}
-                        </Typography.Title>
-                      ),
-                      p: ({children}) => (
-                        <Typography.Paragraph 
-                          style={{ 
-                            marginBottom: '16px',
-                            lineHeight: '1.8',
-                            wordBreak: 'break-word'
+                  <div style={{
+                    background: darkMode ? '#1f1f1f' : '#fff',
+                    borderRadius: '8px',
+                    padding: '32px',
+                    boxShadow: darkMode 
+                      ? '0 2px 8px rgba(0,0,0,0.3)' 
+                      : '0 2px 8px rgba(0,0,0,0.06)'
+                  }}>
+                    {/* 文章标题 */}
+                    {selectedTitle && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <Title level={2} style={{ marginBottom: '16px' }}>
+                          {selectedTitle}
+                        </Title>
+                        <Space split={<Divider type="vertical" />}>
+                          <Text type="secondary">
+                            <ClockCircleOutlined /> {formatDateTime(task?.updateTime, 'YYYY-MM-DD')}
+                          </Text>
+                          <Text type="secondary">
+                            <EyeOutlined /> {Math.floor(Math.random() * 1000) + 100} 阅读
+                          </Text>
+                          <Tag color="blue">
+                            <StarOutlined /> {getRandomStars()} stars
+                          </Tag>
+                        </Space>
+                        <Divider />
+                      </div>
+                    )}
+
+                    {/* 文章内容 */}
+                    {selectedContent ? (
+                      <div className="markdown-body" style={{ fontSize: '15px', lineHeight: '1.8' }}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeHighlight]}
+                          components={{
+                            h1: ({children, ...props}) => {
+                              const id = `heading-${props.node?.position?.start?.line}`;
+                              return <h1 id={id} style={{ 
+                                fontSize: '28px', 
+                                fontWeight: 600,
+                                marginTop: '24px',
+                                marginBottom: '16px',
+                                paddingBottom: '8px',
+                                borderBottom: darkMode ? '1px solid #303030' : '1px solid #e8e8e8'
+                              }}>{children}</h1>;
+                            },
+                            h2: ({children, ...props}) => {
+                              const id = `heading-${props.node?.position?.start?.line}`;
+                              return <h2 id={id} style={{ 
+                                fontSize: '22px',
+                                fontWeight: 600,
+                                marginTop: '20px',
+                                marginBottom: '12px'
+                              }}>{children}</h2>;
+                            },
+                            h3: ({children, ...props}) => {
+                              const id = `heading-${props.node?.position?.start?.line}`;
+                              return <h3 id={id} style={{ 
+                                fontSize: '18px',
+                                fontWeight: 600,
+                                marginTop: '16px',
+                                marginBottom: '8px'
+                              }}>{children}</h3>;
+                            },
+                            p: ({children}) => (
+                              <p style={{ 
+                                marginBottom: '16px',
+                                color: darkMode ? '#ffffffd9' : '#262626'
+                              }}>{children}</p>
+                            ),
+                            code: ({node, inline, className = '', children, ...props}) => {
+                              if (inline) {
+                                return (
+                                  <code style={{
+                                    background: darkMode ? '#2d2d2d' : '#f6f8fa',
+                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    fontSize: '14px',
+                                    color: darkMode ? '#ff7875' : '#d73a49',
+                                    fontFamily: 'SFMono-Regular, Consolas, monospace'
+                                  }}>{children}</code>
+                                );
+                              }
+                              return (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            },
+                            pre: ({children}) => {
+                              const textContent = children?.props?.children;
+                              if (typeof textContent === 'string' && textContent.includes('graph') || textContent?.includes('flowchart')) {
+                                return <MermaidChart chart={textContent} />;
+                              }
+                              return (
+                                <pre style={{
+                                  background: darkMode ? '#1e1e1e' : '#f6f8fa',
+                                  padding: '16px',
+                                  borderRadius: '6px',
+                                  overflow: 'auto',
+                                  fontSize: '14px',
+                                  lineHeight: '1.5',
+                                  marginBottom: '16px'
+                                }}>{children}</pre>
+                              );
+                            },
+                            blockquote: ({children}) => (
+                              <blockquote style={{
+                                borderLeft: '4px solid #1890ff',
+                                paddingLeft: '16px',
+                                margin: '16px 0',
+                                background: darkMode ? '#1f1f1f' : '#f6f8fa',
+                                padding: '16px',
+                                borderRadius: '6px',
+                                color: darkMode ? '#ffffffa6' : '#595959'
+                              }}>{children}</blockquote>
+                            ),
+                            a: ({children, href}) => (
+                              <a 
+                                href={href} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                style={{ 
+                                  color: '#1890ff',
+                                  textDecoration: 'none'
+                                }}
+                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                              >{children}</a>
+                            ),
+                            ul: ({children}) => (
+                              <ul style={{ 
+                                paddingLeft: '20px',
+                                marginBottom: '16px',
+                                lineHeight: '1.8'
+                              }}>{children}</ul>
+                            ),
+                            ol: ({children}) => (
+                              <ol style={{ 
+                                paddingLeft: '20px',
+                                marginBottom: '16px',
+                                lineHeight: '1.8'
+                              }}>{children}</ol>
+                            ),
+                            li: ({children}) => (
+                              <li style={{ marginBottom: '4px' }}>{children}</li>
+                            ),
+                            table: ({children}) => (
+                              <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
+                                <table style={{
+                                  width: '100%',
+                                  borderCollapse: 'collapse',
+                                  border: darkMode ? '1px solid #303030' : '1px solid #d9d9d9'
+                                }}>{children}</table>
+                              </div>
+                            ),
+                            th: ({children}) => (
+                              <th style={{
+                                border: darkMode ? '1px solid #303030' : '1px solid #d9d9d9',
+                                padding: '12px',
+                                background: darkMode ? '#262626' : '#fafafa',
+                                fontWeight: 600
+                              }}>{children}</th>
+                            ),
+                            td: ({children}) => (
+                              <td style={{
+                                border: darkMode ? '1px solid #303030' : '1px solid #d9d9d9',
+                                padding: '12px'
+                              }}>{children}</td>
+                            )
                           }}
                         >
-                          {children}
-                        </Typography.Paragraph>
-                      ),
-                      blockquote: ({children}) => (
-                        <div style={markdownStyles.blockquote}>
-                          {children}
-                        </div>
-                                              ),
-                      pre: ({children}) => {
-                        // 安全地检查子元素是否是 Mermaid 图表
-                        try {
-                          // 验证 children 是否存在
-                          if (!children) {
-                            return <pre style={markdownStyles.codeBlock}>{children}</pre>;
-                          }
+                          {selectedContent}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <Empty 
+                        description="请从左侧选择文档查看"
+                        style={{ padding: '60px 0' }}
+                      />
+                    )}
+                  </div>
+                </motion.div>
 
-                          // 尝试提取文本内容来检测是否是Mermaid
-                          let textContent = '';
-                          
-                          // 递归提取所有文本内容
-                          const extractText = (node) => {
-                            if (typeof node === 'string') {
-                              return node;
-                            } else if (node && node.props && node.props.children) {
-                              if (typeof node.props.children === 'string') {
-                                return node.props.children;
-                              } else if (Array.isArray(node.props.children)) {
-                                return node.props.children.map(extractText).join('');
-                              }
-                            }
-                            return '';
-                          };
-                          
-                          if (Array.isArray(children)) {
-                            textContent = children.map(extractText).join('');
-                              } else {
-                            textContent = extractText(children);
-                              }
-                              
-                          textContent = textContent.trim();
-                          
-                          // 检查是否包含Mermaid语法 - 更严格的匹配
-                          const mermaidPatterns = [
-                            /^graph\s+(TD|TB|BT|RL|LR)/i,
-                            /^flowchart\s+(TD|TB|BT|RL|LR)/i,
-                            /^sequenceDiagram[\s\n]/i,
-                            /^classDiagram[\s\n]/i,
-                            /^stateDiagram(-v2)?[\s\n]/i,
-                            /^erDiagram[\s\n]/i,
-                            /^gantt[\s\n]/i,
-                            /^journey[\s\n]/i,
-                            /^pie\s+title/i,
-                            /^gitgraph[\s\n]/i
-                          ];
-                          
-                          // 额外验证：必须包含基本的Mermaid语法元素
-                          const hasValidMermaidSyntax = (content) => {
-                            // 检查是否有箭头、连接符等Mermaid特征
-                            const mermaidFeatures = [
-                              /-->/,     // 箭头
-                              /---/,     // 连线
-                              /\[\s*.*\s*\]/,  // 方括号节点
-                              /\(\s*.*\s*\)/,  // 圆括号节点
-                              /participant\s+/i,  // 序列图参与者
-                              /class\s+\w+/i,     // 类图
-                              /state\s+\w+/i,     // 状态图
-                              /\|\w+\|/          // 实体关系图
-                            ];
-                            
-                            return mermaidFeatures.some(pattern => pattern.test(content));
-                          };
-                          
-                          const isMermaid = mermaidPatterns.some(pattern => pattern.test(textContent)) 
-                                           && hasValidMermaidSyntax(textContent)
-                                           && textContent.length > 10; // 最小长度检查
-                          
-                          if (isMermaid && textContent) {
-                            // 生成唯一ID
-                            const uniqueId = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                                
-                            return (
-                              <MermaidChart 
-                                chart={textContent} 
-                                  id={uniqueId}
-                                  key={uniqueId}
-                              />
-                            );
-                          }
-                        } catch (e) {
-                          // 如果处理过程中出现任何错误，回退到普通的 pre 渲染
-                          console.warn('Pre component Mermaid processing error:', e);
-                        }
-                        
-                        // 默认情况：渲染普通的代码块
-                        return (
-                          <pre style={markdownStyles.codeBlock}>
-                            {children}
-                          </pre>
-                        );
-                      },
-                      table: ({children}) => (
-                        <div style={{ overflow: 'auto', margin: '16px 0' }}>
-                          <table style={markdownStyles.table}>
-                            {children}
-                          </table>
+                {/* 文章大纲 - 桌面端显示 */}
+                {anchors.length > 0 && window.innerWidth >= 1400 && (
+                  <Affix offsetTop={80}>
+                    <div style={{ width: '240px' }}>
+                      <div style={{
+                        background: darkMode ? '#1f1f1f' : '#fff',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        boxShadow: darkMode 
+                          ? '0 2px 8px rgba(0,0,0,0.3)' 
+                          : '0 2px 8px rgba(0,0,0,0.06)'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center',
+                          marginBottom: '12px'
+                        }}>
+                          <UnorderedListOutlined style={{ marginRight: '8px' }} />
+                          <Text strong>文章大纲</Text>
                         </div>
-                      ),
-                      th: ({children}) => (
-                        <th style={markdownStyles.th}>
-                          {children}
-                        </th>
-                      ),
-                      td: ({children}) => (
-                        <td style={markdownStyles.td}>
-                          {children}
-                        </td>
-                      ),
-                      ul: ({children}) => (
-                        <ul style={markdownStyles.list}>
-                          {children}
-                        </ul>
-                      ),
-                      ol: ({children}) => (
-                        <ol style={markdownStyles.list}>
-                          {children}
-                        </ol>
-                      ),
-                      li: ({children}) => (
-                        <li style={markdownStyles.listItem}>
-                          {children}
-                        </li>
-                      ),
-                      a: ({children, href}) => (
-                        <a 
-                          href={href} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          style={{ color: '#1890ff', textDecoration: 'none' }}
-                          onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
-                          onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
-                        >
-                          {children}
-                        </a>
-                      ),
-                      strong: ({children}) => (
-                        <strong style={{ fontWeight: 600, color: '#262626' }}>
-                          {children}
-                        </strong>
-                      ),
-                      em: ({children}) => (
-                        <em style={{ fontStyle: 'italic', color: '#595959' }}>
-                          {children}
-                        </em>
-                      ),
-                      hr: () => (
-                        <hr style={{ 
-                          margin: '24px 0', 
-                          border: 'none', 
-                          borderTop: '1px solid #f0f0f0' 
-                        }} />
-                      )
-                    }}
-                  >
-                    {selectedContent}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '60px 20px',
-                  color: 'rgba(0, 0, 0, 0.45)'
-                }}>
-                  <FileTextOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-                  <Paragraph>
-                    请从左侧目录中选择一个文档来查看详细内容
-                  </Paragraph>
-                </div>
-              )}
-            </Card>
-          </motion.div>
-        </Content>
+                        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                          {anchors.map((anchor) => (
+                            <div
+                              key={anchor.id}
+                              style={{
+                                paddingLeft: `${(anchor.level - 1) * 16}px`,
+                                marginBottom: '8px',
+                                cursor: 'pointer',
+                                color: activeAnchor === anchor.id 
+                                  ? '#1890ff' 
+                                  : (darkMode ? '#ffffffa6' : '#595959'),
+                                fontSize: anchor.level === 1 ? '14px' : '13px',
+                                fontWeight: anchor.level === 1 ? 500 : 400,
+                                transition: 'color 0.3s'
+                              }}
+                              onClick={() => {
+                                const element = document.getElementById(anchor.id);
+                                element?.scrollIntoView({ behavior: 'smooth' });
+                                setActiveAnchor(anchor.id);
+                              }}
+                              onMouseEnter={(e) => e.target.style.color = '#1890ff'}
+                              onMouseLeave={(e) => {
+                                if (activeAnchor !== anchor.id) {
+                                  e.target.style.color = darkMode ? '#ffffffa6' : '#595959';
+                                }
+                              }}
+                            >
+                              {anchor.title}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </Affix>
+                )}
+              </div>
+            </Content>
+          </Layout>
+        </Layout>
+
+        {/* 回到顶部 */}
+        <BackTop target={() => contentRef.current} />
+        
+        {/* Chat Widget */}
+        <ChatWidget darkMode={darkMode} />
       </Layout>
-    </div>
+
+      {/* 自定义样式 */}
+      <style jsx>{`
+        .custom-wiki-tree .ant-tree-treenode {
+          padding: 2px 0;
+        }
+        
+        .custom-wiki-tree .ant-tree-node-content-wrapper {
+          padding: 4px 8px;
+          border-radius: 4px;
+          transition: all 0.2s;
+        }
+        
+        .custom-wiki-tree .ant-tree-node-content-wrapper:hover {
+          background: ${darkMode ? '#262626' : '#f5f5f5'};
+        }
+        
+        .custom-wiki-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+          background: #e6f7ff;
+          border: 1px solid #91d5ff;
+        }
+        
+        .markdown-body img {
+          max-width: 100%;
+          height: auto;
+        }
+        
+        .markdown-body hr {
+          margin: 24px 0;
+          border: none;
+          border-top: 1px solid ${darkMode ? '#303030' : '#e8e8e8'};
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+          .ant-layout-header {
+            padding: 0 16px !important;
+          }
+          
+          .ant-layout-content {
+            padding: 16px !important;
+          }
+          
+          .markdown-body {
+            font-size: 14px !important;
+          }
+        }
+      `}</style>
+    </ConfigProvider>
   );
 };
 
-export default RepoDetail; 
+export default RepoDetail;
