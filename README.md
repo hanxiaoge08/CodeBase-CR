@@ -2,9 +2,8 @@
 
 基于Spring AI的智能代码仓库分析平台，集成代码审查、仓库分析、文档生成和任务管理功能，帮助开发团队深度理解和高效管理代码仓库。
 
-![image-20250811094915448](images\image-20250811094915448.png)
-
-![image-20250811094958671](images\image-20250811094958671.png)
+<img width="2545" height="1129" alt="image-20250811094915448" src="https://github.com/user-attachments/assets/2b5ee8e1-e5cb-4205-bbde-171280136ce6" />
+<img width="2520" height="1134" alt="image-20250811094958671" src="https://github.com/user-attachments/assets/130f8fc6-5b80-49e1-8391-69a5c471a93d" />
 
 ## 功能特性
 
