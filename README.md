@@ -2,6 +2,10 @@
 
 基于Spring AI的智能代码仓库分析平台，集成代码审查、仓库分析、文档生成和任务管理功能，帮助开发团队深度理解和高效管理代码仓库。
 
+![image-20250811094915448](C:\Code\CodeBase-CR\images\image-20250811094915448.png)
+
+![image-20250811094958671](C:\Code\CodeBase-CR\images\image-20250811094958671.png)
+
 ## 功能特性
 
 - 🔍 **智能仓库分析**: 深度分析GitHub仓库结构、代码组织和技术架构
@@ -11,19 +15,20 @@
 - 🎯 **精确定位分析**: 提供文件和行级别的详细分析结果
 - 🌐 **现代化界面**: React前端提供直观的用户交互体验
 - ⚡ **异步处理**: 基于Kafka消息队列的高性能后台任务处理
-- 📋 **双知识库**: 结合编码规范和项目上下文的RAG检索增强
+- 📋 **知识库**: 结合编码规范和项目上下文的RAG检索增强
 - 🚀 **并发控制**: 智能的任务并发限制和API访问频率控制
 - 🧠 **记忆系统**: 集成Mem0记忆系统的智能知识索引
+- Chat to repository（开发中）
 
 ## 技术栈
 
 ### 后端技术
 - **Java 21** + **Spring Boot 3.4.5** - 核心后端框架
-- **Spring AI** + **Spring AI Alibaba** - AI集成和大模型调用
+- **Spring AI1.0.0** + **Spring AI Alibaba1.0.0.3** - AI集成和大模型调用
 - **Apache Kafka** - 消息队列系统，支持异步文档生成和Code Review
 - **SQLite** + **MyBatis-Plus** - 数据持久化
 - **GitHub API** + **JGit** - 代码仓库集成
-- **阿里云通义千问/OpenAI** - 大语言模型服务
+- **百炼平台Qwen3** - 大语言模型服务
 - **Mem0** - 记忆系统集成，提供智能知识索引
 
 ### 前端技术
@@ -52,6 +57,8 @@
 
 ### 2. 配置环境变量
 
+可在环境变量中永久设置
+
 ```bash
 # AI模型配置（二选一）
 export DASHSCOPE_API_KEY=your-dashscope-api-key  # 阿里云通义千问
@@ -65,6 +72,14 @@ export GITHUB_WEBHOOK_SECRET=your-webhook-secret
 export MEM0_API_URL=http://localhost:8080
 ```
 
+### 3. 启动Mem0服务
+
+```bash
+# mem0最好改成最新版本，最近修复了一个重要问题
+cd CodeBase-Memory/server
+docker-compose up -d
+```
+
 ### 3. 启动Kafka服务
 
 ```bash
@@ -74,6 +89,8 @@ docker-compose up -d
 ```
 
 ### 4. 启动后端服务
+
+本地idea启动的话，先启动memory服务
 
 ```bash
 # 编译并启动后端
