@@ -67,8 +67,6 @@ export OPENAI_API_KEY=your-openai-api-key        # OpenAI
 export GITHUB_TOKEN=your-github-token
 export GITHUB_WEBHOOK_SECRET=your-webhook-secret
 
-# Mem0记忆系统配置（可选）
-export MEM0_API_URL=http://localhost:8080
 ```
 
 ### 3. 启动Mem0服务
@@ -87,15 +85,13 @@ cd CodeBase-Wiki
 docker-compose up -d
 ```
 
+### 4. 新建sqlite数据库
+
+新建一个sqlite数据库，数据文件存为data/chat-memory.db(在SQLiteConfig.java中)
+
 ### 4. 启动后端服务
 
-本地idea启动的话，先启动memory服务
-
-```bash
-# 编译并启动后端
-mvn clean install
-mvn spring-boot:run -pl CodeBase-Wiki
-```
+本地idea启动的话，先启动memory服务再启动其他服务
 
 ### 5. 启动前端应用
 
@@ -110,6 +106,7 @@ npm install
 npm start
 
 # 前端将在 http://localhost:3000 启动
+# 前端需要强制跨域（在chrome快捷方式属性中目标最后加入 --args --disable-web-security --user-data-dir=<空白存储目录用于存储数据>)
 ```
 
 ### 6. 访问应用
@@ -133,24 +130,11 @@ npm start
 ```yaml
 spring:
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
       chat:
         options:
-          model: gpt-4o-mini
-          temperature: 0.1
-  
-  # Kafka消息队列配置
-  kafka:
-    bootstrap-servers: localhost:9092
-    consumer:
-      group-id: doc-generation-consumer-group
-      enable-auto-commit: false
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+          model: qwen3-coder-plus-2025-07-22
 
 # CodeBase-Wiki模块专用配置
 project:
@@ -177,7 +161,7 @@ app:
 # 记忆系统配置
 memory-service:
   enabled: true
-  base-url: ${MEM0_API_URL:http://localhost:8100}
+  base-url: ${MEM0_API_URL}
 ```
 
 ## 核心工作流程
