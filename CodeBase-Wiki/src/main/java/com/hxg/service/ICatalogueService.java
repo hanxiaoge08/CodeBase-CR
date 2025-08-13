@@ -21,7 +21,7 @@ public interface ICatalogueService {
 
     public List<Catalogue> saveCatalogueStruct(ExecutionContext context, CatalogueStruct catalogueStruct);
 
-    public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath);
+    public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath, String projectName);
 
     public void deleteCatalogueByTaskId(String taskId);
 

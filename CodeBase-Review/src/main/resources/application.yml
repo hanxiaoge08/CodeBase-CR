@@ -72,8 +72,8 @@ feign:
     config:
       memory-service:
         connectTimeout: 5000
-        readTimeout: 10000
-        loggerLevel: basic
+        readTimeout: 30000  # 增加读取超时时间到30秒
+        loggerLevel: full   # 开启完整日志以便调试
   hystrix:
     enabled: false
   circuitbreaker:

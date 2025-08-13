@@ -63,38 +63,80 @@ public class ResultPublishServiceImpl implements IResultPublishService {
     private void publishLineComments(ReviewTaskDTO task, java.util.List<ReviewCommentDTO> comments) {
         int successCount = 0;
         int errorCount = 0;
+        int generalCommentCount = 0;
 
         for (ReviewCommentDTO comment : comments) {
             try {
                 // 为评论添加严重程度标识
                 String formattedComment = formatComment(comment);
                 
-                ReviewCommentDTO formattedCommentDto = ReviewCommentDTO.builder()
-                    .filePath(comment.filePath())
-                    .lineNumber(comment.lineNumber())
-                    .comment(formattedComment)
-                    .severity(comment.severity())
-                    .build();
-
-                gitHubAdapter.publishLineComment(
-                    task.repositoryFullName(), 
-                    task.prNumber(), 
-                    formattedCommentDto
-                );
+                // 检查是否为有效的行级评论
+                boolean isValidLineComment = isValidLineComment(comment);
                 
-                successCount++;
+                if (isValidLineComment) {
+                    // 发布行级评论
+                    ReviewCommentDTO formattedCommentDto = ReviewCommentDTO.builder()
+                        .filePath(comment.filePath())
+                        .lineNumber(comment.lineNumber())
+                        .comment(formattedComment)
+                        .severity(comment.severity())
+                        .build();
+
+                    gitHubAdapter.publishLineComment(
+                        task.repositoryFullName(), 
+                        task.prNumber(), 
+                        formattedCommentDto
+                    );
+                    successCount++;
+                } else {
+                    // 对于无效的行级评论，发布为PR级别的评论
+                    String generalComment = String.format(
+                        "%s\n\n**📍 位置:** %s", 
+                        formattedComment,
+                        comment.filePath() != null && !"general".equalsIgnoreCase(comment.filePath()) ? 
+                            comment.filePath() : "整体审查"
+                    );
+                    
+                    gitHubAdapter.publishGeneralComment(
+                        task.repositoryFullName(),
+                        task.prNumber(),
+                        generalComment
+                    );
+                    generalCommentCount++;
+                }
                 
                 // 添加延迟避免API速率限制
                 Thread.sleep(100);
                 
             } catch (Exception e) {
-                logger.error("发布行级评论失败: file={}, line={}, error={}", 
+                logger.error("发布评论失败: file={}, line={}, error={}", 
                     comment.filePath(), comment.lineNumber(), e.getMessage());
                 errorCount++;
             }
         }
 
-        logger.info("行级评论发布完成: 成功={}, 失败={}", successCount, errorCount);
+        logger.info("评论发布完成: 行级评论成功={}, PR级评论={}, 失败={}", 
+            successCount, generalCommentCount, errorCount);
+    }
+    
+    /**
+     * 检查是否为有效的行级评论
+     */
+    private boolean isValidLineComment(ReviewCommentDTO comment) {
+        // 文件路径必须是真实的文件路径
+        if (comment.filePath() == null || comment.filePath().trim().isEmpty() 
+            || "general".equalsIgnoreCase(comment.filePath())
+            || "整体".equals(comment.filePath())
+            || !comment.filePath().contains(".")) {
+            return false;
+        }
+        
+        // 行号必须大于0
+        if (comment.lineNumber() == null || comment.lineNumber() <= 0) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**

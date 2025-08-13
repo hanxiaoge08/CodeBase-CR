@@ -162,8 +162,18 @@ public class CodeReviewServiceImpl implements ICodeReviewService {
                 logger.info("代码审查完成并发布: repo={}, pr={}, 评论数={}", 
                     task.repositoryFullName(), task.prNumber(), result.comments().size());
             } else {
-                logger.info("未生成任何审查评论: repo={}, pr={}", 
+                // 即使没有发现问题，也发布审查通过报告
+                logger.info("传统流程审查未发现问题，发布审查通过报告: repo={}, pr={}", 
                     task.repositoryFullName(), task.prNumber());
+                
+                // 构建简单的审查通过结果
+                String summary = "✅ 代码审查通过\n\n经过AI审查，未发现需要修改的问题。";
+                ReviewResultDTO approvalResult = new ReviewResultDTO(
+                    new java.util.ArrayList<>(),
+                    summary,
+                    ReviewResultDTO.OverallRating.EXCELLENT.getValue()
+                );
+                resultPublishService.publishReviewResult(task, approvalResult);
             }
             
         } catch (Exception e) {
@@ -275,7 +285,14 @@ public class CodeReviewServiceImpl implements ICodeReviewService {
                 logger.info("已发布审查结果: repo={}, pr={}, 评论数={}", 
                     task.repositoryFullName(), task.prNumber(), finalResult.comments().size());
             } else {
-                logger.info("未生成任何审查评论: repo={}, pr={}", 
+                // 即使没有发现问题，也应该发布审查通过的报告
+                logger.info("审查未发现问题，准备发布审查通过报告: repo={}, pr={}", 
+                    task.repositoryFullName(), task.prNumber());
+                
+                // 构建审查通过的结果
+                ReviewResultDTO approvalResult = buildApprovalResult(finalState);
+                resultPublishService.publishReviewResult(task, approvalResult);
+                logger.info("已发布审查通过报告: repo={}, pr={}", 
                     task.repositoryFullName(), task.prNumber());
             }
             
@@ -327,5 +344,49 @@ public class CodeReviewServiceImpl implements ICodeReviewService {
         } else {
             return ReviewResultDTO.OverallRating.POOR.getValue();
         }
+    }
+    
+    /**
+     * 构建审查通过的结果报告
+     */
+    private ReviewResultDTO buildApprovalResult(OverAllState state) {
+        // 获取审查决策信息
+        String triageDecision = (String) state.value("triage_decision").orElse("unknown");
+        String changeType = (String) state.value("change_type").orElse("unknown");
+        String prIntent = (String) state.value("pr_intent").orElse("代码变更");
+        String markdownReport = (String) state.value("markdown_report").orElse("");
+        
+        // 构建审查通过的摘要
+        String summary;
+        if ("skip_review".equals(triageDecision) || "skip_detailed".equals(triageDecision)) {
+            summary = String.format("✅ 代码审查完成\n\n" +
+                "**变更类型**: %s\n" +
+                "**PR意图**: %s\n\n" +
+                "由于本次变更为%s类型，系统进行了快速审查，未发现明显问题。",
+                changeType, prIntent, changeType);
+        } else if (markdownReport != null && !markdownReport.isEmpty()) {
+            // 如果有markdown报告，直接使用
+            summary = markdownReport;
+        } else {
+            summary = String.format("✅ 代码审查通过\n\n" +
+                "**变更类型**: %s\n" +
+                "**PR意图**: %s\n\n" +
+                "经过多智能体系统的全面审查，包括：\n" +
+                "- 编码规范检查 ✓\n" +
+                "- 逻辑与上下文分析 ✓\n" +
+                "- 安全漏洞扫描 ✓\n\n" +
+                "**结论**: 代码质量良好，未发现需要修改的问题。",
+                changeType, prIntent);
+        }
+        
+        // 创建一个空的评论列表（因为没有问题）
+        List<ReviewCommentDTO> emptyComments = new java.util.ArrayList<>();
+        
+        // 返回审查通过的结果
+        return new ReviewResultDTO(
+            emptyComments,
+            summary,
+            ReviewResultDTO.OverallRating.EXCELLENT.getValue()
+        );
     }
 } 

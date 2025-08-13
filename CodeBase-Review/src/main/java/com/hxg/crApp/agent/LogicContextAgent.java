@@ -119,9 +119,10 @@ public class LogicContextAgent implements NodeAction {
                 return null;
             }
 
+            // 先检查Memory服务是否可用
             if (!memoryService.isMemoryServiceAvailable()) {
-                logger.warn("Memory服务当前不可访问");
-                return null;
+                logger.warn("Memory服务当前不可访问，将使用降级模式");
+                return buildFallbackContext(repoName, prTitle, changedFiles);
             }
 
             logger.info("调用Memory服务获取项目上下文: {}", repoName);
@@ -129,22 +130,68 @@ public class LogicContextAgent implements NodeAction {
             // 提取变更的关键代码片段
             String codeSnippet = extractKeyCodeSnippets(diffContent);
 
-            // 调用Memory服务
-            String context = memoryService.searchContextForCodeReview(
-                    repoName,
-                    codeSnippet,
-                    prTitle,
-                    "检查代码逻辑和设计模式一致性",
-                    Arrays.asList(changedFiles)
-            );
+            // 调用Memory服务 - 添加超时重试机制
+            String context = null;
+            int retryCount = 0;
+            int maxRetries = 2;
+            
+            while (context == null && retryCount < maxRetries) {
+                try {
+                    context = memoryService.searchContextForCodeReview(
+                            repoName,
+                            codeSnippet,
+                            prTitle,
+                            "检查代码逻辑和设计模式一致性",
+                            Arrays.asList(changedFiles)
+                    );
+                    
+                    if (context != null && !context.isEmpty()) {
+                        logger.info("成功获取项目上下文");
+                        return context;
+                    }
+                } catch (Exception innerEx) {
+                    retryCount++;
+                    if (retryCount >= maxRetries) {
+                        logger.error("Memory服务调用失败，已重试{}次", retryCount, innerEx);
+                        return buildFallbackContext(repoName, prTitle, changedFiles);
+                    }
+                    logger.warn("Memory服务调用失败，重试 {}/{}", retryCount, maxRetries);
+                    Thread.sleep(1000 * retryCount); // 递增等待时间
+                }
+            }
 
-            logger.info("成功获取项目上下文");
             return context;
 
         } catch (Exception e) {
-            logger.error("获取项目上下文失败", e);
-            return null;
+            logger.error("获取项目上下文失败，使用降级模式", e);
+            return buildFallbackContext(repoName, prTitle, changedFiles);
         }
+    }
+    
+    /**
+     * 构建降级的上下文信息
+     */
+    private String buildFallbackContext(String repoName, String prTitle, String[] changedFiles) {
+        StringBuilder context = new StringBuilder();
+        context.append("=== 项目上下文信息（降级模式）===\n");
+        context.append("仓库: ").append(repoName).append("\n");
+        context.append("PR标题: ").append(prTitle).append("\n");
+        context.append("变更文件数: ").append(changedFiles.length).append("\n");
+        
+        if (changedFiles.length > 0 && changedFiles.length <= 10) {
+            context.append("变更文件列表:\n");
+            for (String file : changedFiles) {
+                context.append("  - ").append(file).append("\n");
+            }
+        }
+        
+        context.append("\n注意：Memory服务暂时不可用，基于代码变更内容进行分析。\n");
+        context.append("建议：\n");
+        context.append("1. 确保Memory服务已启动（端口8080）\n");
+        context.append("2. 检查网络连接是否正常\n");
+        context.append("3. 验证服务配置是否正确\n");
+        
+        return context.toString();
     }
 
     /**

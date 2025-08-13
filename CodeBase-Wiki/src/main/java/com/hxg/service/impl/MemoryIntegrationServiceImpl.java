@@ -46,14 +46,14 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     );
     
     @Override
-    public CompletableFuture<Void> indexProjectToMemoryAsync(String taskId, 
+    public CompletableFuture<Void> indexProjectToMemoryAsync(String repositoryId, 
                                                             List<Catalogue> catalogues, 
                                                             String projectPath) {
         
         return CompletableFuture.runAsync(() -> {
             try {
-                logger.info("开始项目记忆索引: taskId={}, catalogueCount={}, projectPath={}", 
-                    taskId, catalogues.size(), projectPath);
+                logger.info("开始项目记忆索引: repositoryId={}, catalogueCount={}, projectPath={}", 
+                    repositoryId, catalogues.size(), projectPath);
                 
                 // 索引生成的文档内容
                 List<BatchDocumentRequest.DocumentInfo> documents = new ArrayList<>();
@@ -61,7 +61,7 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 for (Catalogue catalogue : catalogues) {
                     if (StringUtils.hasText(catalogue.getContent())) {
                         String documentUrl = generateDocumentUrl(catalogue);
-                        Map<String, Object> metadata = createCatalogueMetadata(catalogue, taskId);
+                        Map<String, Object> metadata = createCatalogueMetadata(catalogue, catalogue.getTaskId());
                         
                         BatchDocumentRequest.DocumentInfo docInfo = new BatchDocumentRequest.DocumentInfo(
                             catalogue.getName(),
@@ -76,46 +76,46 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 // 批量索引文档
                 if (!documents.isEmpty()) {
                     try {
-                        BatchDocumentRequest batchRequest = new BatchDocumentRequest(taskId, documents);
+                        BatchDocumentRequest batchRequest = new BatchDocumentRequest(repositoryId, documents);
                         memoryServiceClient.batchAddDocuments(batchRequest);
-                        logger.info("批量文档索引完成: taskId={}, 文档数量={}", taskId, documents.size());
+                        logger.info("批量文档索引完成: repositoryId={}, 文档数量={}", repositoryId, documents.size());
                     } catch (Exception ex) {
-                        logger.error("批量索引文档失败: taskId={}", taskId, ex);
+                        logger.error("批量索引文档失败: repositoryId={}", repositoryId, ex);
                     }
                 }
                 
                 // 并行索引代码文件
-                CompletableFuture<Void> codeIndexFuture = indexCodeFilesToMemoryAsync(taskId, projectPath);
+                CompletableFuture<Void> codeIndexFuture = indexCodeFilesToMemoryAsync(repositoryId, projectPath);
                 
                 // 等待代码文件索引完成
                 codeIndexFuture.join();
                 
-                logger.info("项目记忆索引完成: taskId={}, 文档数量={}", taskId, documents.size());
+                logger.info("项目记忆索引完成: repositoryId={}, 文档数量={}", repositoryId, documents.size());
                 
             } catch (Exception e) {
-                logger.error("项目记忆索引失败: taskId={}", taskId, e);
+                logger.error("项目记忆索引失败: repositoryId={}", repositoryId, e);
                 throw new RuntimeException("项目记忆索引失败", e);
             }
         });
     }
     
     @Override
-    public CompletableFuture<Void> indexDocumentToMemoryAsync(String taskId, Catalogue catalogue) {
+    public CompletableFuture<Void> indexDocumentToMemoryAsync(String repositoryId, Catalogue catalogue) {
         
         if (!StringUtils.hasText(catalogue.getContent())) {
-            logger.debug("文档内容为空，跳过索引: taskId={}, catalogueName={}", taskId, catalogue.getName());
+            logger.debug("文档内容为空，跳过索引: repositoryId={}, catalogueName={}", repositoryId, catalogue.getName());
             return CompletableFuture.completedFuture(null);
         }
         
         return CompletableFuture.runAsync(() -> {
             try {
-                logger.debug("开始单个文档记忆索引: taskId={}, catalogueName={}", taskId, catalogue.getName());
+                logger.debug("开始单个文档记忆索引: repositoryId={}, catalogueName={}", repositoryId, catalogue.getName());
                 
                 String documentUrl = generateDocumentUrl(catalogue);
-                Map<String, Object> metadata = createCatalogueMetadata(catalogue, taskId);
+                Map<String, Object> metadata = createCatalogueMetadata(catalogue, catalogue.getTaskId());
                 
                 DocumentRequest request = new DocumentRequest(
-                    taskId,
+                    repositoryId,  // 使用传入的repositoryId（应该是projectName）
                     catalogue.getName(),
                     catalogue.getContent(),
                     documentUrl,
@@ -124,20 +124,20 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 
                 memoryServiceClient.addDocument(request);
                 
-                logger.debug("单个文档记忆索引完成: taskId={}, catalogueName={}", taskId, catalogue.getName());
+                logger.debug("单个文档记忆索引完成: repositoryId={}, catalogueName={}", repositoryId, catalogue.getName());
                 
             } catch (Exception e) {
-                logger.error("单个文档记忆索引异常: taskId={}, catalogueName={}", taskId, catalogue.getName(), e);
+                logger.error("单个文档记忆索引异常: repositoryId={}, catalogueName={}", repositoryId, catalogue.getName(), e);
             }
         });
     }
     
     @Override
-    public CompletableFuture<Void> indexCodeFilesToMemoryAsync(String taskId, String projectPath) {
+    public CompletableFuture<Void> indexCodeFilesToMemoryAsync(String repositoryId, String projectPath) {
         
         return CompletableFuture.runAsync(() -> {
             try {
-                logger.info("开始代码文件记忆索引: taskId={}, projectPath={}", taskId, projectPath);
+                logger.info("开始代码文件记忆索引: repositoryId={}, projectPath={}", repositoryId, projectPath);
                 
                 Path projectDir = Paths.get(projectPath);
                 if (!Files.exists(projectDir) || !Files.isDirectory(projectDir)) {
@@ -152,7 +152,7 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 int indexedCount = 0;
                 for (Path codeFile : codeFiles) {
                     try {
-                        if (indexSingleCodeFile(taskId, projectDir, codeFile)) {
+                        if (indexSingleCodeFile(repositoryId, projectDir, codeFile)) {
                             indexedCount++;
                         }
                     } catch (Exception e) {
@@ -160,11 +160,11 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                     }
                 }
                 
-                logger.info("代码文件记忆索引完成: taskId={}, 总文件数={}, 索引数={}", 
-                    taskId, codeFiles.size(), indexedCount);
+                logger.info("代码文件记忆索引完成: repositoryId={}, 总文件数={}, 索引数={}", 
+                    repositoryId, codeFiles.size(), indexedCount);
                 
             } catch (Exception e) {
-                logger.error("代码文件记忆索引异常: taskId={}", taskId, e);
+                logger.error("代码文件记忆索引异常: repositoryId={}", repositoryId, e);
             }
         });
     }
@@ -228,7 +228,7 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     /**
      * 索引单个代码文件
      */
-    private boolean indexSingleCodeFile(String taskId, Path projectDir, Path codeFile) {
+    private boolean indexSingleCodeFile(String repositoryId, Path projectDir, Path codeFile) {
         try {
             // 读取文件内容
             String content = Files.readString(codeFile);
@@ -243,7 +243,7 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
             
             // 创建请求并调用Feign客户端
             CodeFileRequest request = new CodeFileRequest(
-                taskId,
+                repositoryId,  // 使用传入的repositoryId（应该是projectName）
                 fileName,
                 relativePath,
                 content,

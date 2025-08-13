@@ -113,7 +113,7 @@ public class TriageAgent implements NodeAction {
             return "PR标题不能为空";
         }
         
-        if (title.length() < 5) {
+        if (title.length() < 3) {  // 放宽限制从5改为3
             return "PR标题过短，请提供更详细的描述";
         }
         
@@ -122,6 +122,7 @@ public class TriageAgent implements NodeAction {
         }
         
         // 检查是否符合约定格式，如: feat:, fix:, docs:, refactor:等
+        // 但这只是建议，不是强制要求
         String[] prefixes = {"feat:", "fix:", "docs:", "style:", "refactor:", 
                             "test:", "chore:", "perf:", "build:", "ci:"};
         boolean hasPrefix = false;
@@ -133,9 +134,11 @@ public class TriageAgent implements NodeAction {
         }
         
         if (!hasPrefix) {
-            return "PR标题应以类型前缀开头(如: feat:, fix:, docs:等)";
+            // 只记录警告，不阻止审查
+            logger.info("PR标题建议以类型前缀开头(如: feat:, fix:, docs:等)，当前标题: {}", title);
         }
-        // 标题符合规范
+        
+        // 标题符合基本要求就通过
         return null; 
     }
     
@@ -185,9 +188,15 @@ public class TriageAgent implements NodeAction {
         if ("documentation".equals(changeType) || "configuration".equals(changeType)) {
             return false;
         }
-        // 小的配置或文档变更不需要审查
-        // 代码变更都需要详细审查
-        return totalChanges >= 10 || "code_only".equals(changeType);
+        
+        // 只要有代码变更就需要详细审查（移除了对变更行数的限制）
+        // 即使是小的代码变更也可能包含重要问题
+        if ("code_only".equals(changeType) || "mixed".equals(changeType) || "test_only".equals(changeType)) {
+            return true;
+        }
+        
+        // 对于其他类型，如果变更较大也需要审查
+        return totalChanges >= 5;
     }
     
     /**

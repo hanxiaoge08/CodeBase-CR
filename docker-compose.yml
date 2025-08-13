@@ -40,11 +40,22 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
 
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-init
+    depends_on:
+      - kafka
+    volumes:
+      - ./init-kafka-topics.sh:/init-kafka-topics.sh
+    entrypoint: ["/bin/bash", "/init-kafka-topics.sh"]
+    restart: "no"
+
   akhq:
     image: tchiotludo/akhq:latest
     container_name: akhq
     depends_on:
       - kafka
+      - kafka-init
     ports:
       - "8081:8080"
     environment:

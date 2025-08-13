@@ -175,13 +175,13 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
     }
 
     @Override
-    public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath) {
+    public void parallelGenerateCatalogueDetail(String fileTree, GenCatalogueDTO genCatalogueDTO, String localPath, String projectName) {
         // 过滤出需要生成详细内容的目录
         List<Catalogue> cataloguesToProcess = genCatalogueDTO.getCatalogueList().stream()
                 .filter(catalogue -> catalogue != null && StringUtils.hasText(catalogue.getName()))
                 .collect(Collectors.toList());
                 
-        log.info("开始通过Kafka队列生成目录详情，总数={}", cataloguesToProcess.size());
+        log.info("开始通过Kafka队列生成目录详情，总数={}, projectName={}", cataloguesToProcess.size(), projectName);
         
         int sentCount = 0;
         for (Catalogue catalogue : cataloguesToProcess) {
@@ -191,13 +191,15 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
                 
                 // 创建文档生成任务
                 DocumentGenerationTask task = DocumentGenerationTask.create(catalogue, fileTree, specificContext, localPath);
+                // 设置项目名称
+                task.setProjectName(projectName);
                 
                 // 发送任务到Kafka队列
                 documentGenerationProducer.sendTask(task);
                 sentCount++;
                 
-                log.debug("文档生成任务已发送到Kafka: taskId={}, catalogueName={}", 
-                        task.getTaskId(), task.getCatalogueName());
+                log.debug("文档生成任务已发送到Kafka: taskId={}, catalogueName={}, projectName={}", 
+                        task.getTaskId(), task.getCatalogueName(), projectName);
                 
             } catch (Exception e) {
                 log.error("发送文档生成任务到Kafka失败: catalogueName={}, error={}", 
