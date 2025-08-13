@@ -37,6 +37,33 @@ kafka-topics --create \
     --replication-factor 1 \
     --config retention.ms=2592000000
 
+# Create memory-index-topic
+kafka-topics --create \
+    --if-not-exists \
+    --topic memory-index-topic \
+    --bootstrap-server kafka:29092 \
+    --partitions 4 \
+    --replication-factor 1 \
+    --config retention.ms=604800000
+
+# Create memory-index-retry-topic
+kafka-topics --create \
+    --if-not-exists \
+    --topic memory-index-retry-topic \
+    --bootstrap-server kafka:29092 \
+    --partitions 2 \
+    --replication-factor 1 \
+    --config retention.ms=86400000
+
+# Create memory-index-dlq
+kafka-topics --create \
+    --if-not-exists \
+    --topic memory-index-dlq \
+    --bootstrap-server kafka:29092 \
+    --partitions 1 \
+    --replication-factor 1 \
+    --config retention.ms=2592000000
+
 echo "Topics created successfully!"
 
 # List all topics
@@ -48,3 +75,6 @@ echo "Topic details:"
 kafka-topics --bootstrap-server kafka:29092 --describe --topic doc-generation-topic
 kafka-topics --bootstrap-server kafka:29092 --describe --topic doc-generation-retry-topic
 kafka-topics --bootstrap-server kafka:29092 --describe --topic doc-generation-dlq
+kafka-topics --bootstrap-server kafka:29092 --describe --topic memory-index-topic
+kafka-topics --bootstrap-server kafka:29092 --describe --topic memory-index-retry-topic
+kafka-topics --bootstrap-server kafka:29092 --describe --topic memory-index-dlq

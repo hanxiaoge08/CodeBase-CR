@@ -121,6 +121,9 @@ project:
         doc-generation: "doc-generation-topic"
         doc-retry: "doc-generation-retry-topic"
         doc-dlq: "doc-generation-dlq"
+        mem-index: "memory-index-topic"
+        mem-retry: "memory-index-retry-topic"
+        mem-dlq: "memory-index-dlq"
       consumer:
         # 最大并发消费者数量
         max-concurrency: 2
