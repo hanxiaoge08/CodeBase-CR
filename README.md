@@ -73,6 +73,9 @@ export GITHUB_WEBHOOK_SECRET=your-webhook-secret
 
 ```bash
 # mem0最好改成最新版本，最近修复了一个重要问题
+cp .env.example .env
+#修改.env中的api-key
+
 cd CodeBase-Memory/server
 docker-compose up -d
 ```
@@ -83,6 +86,19 @@ docker-compose up -d
 # 使用Docker Compose启动Kafka
 cd CodeBase-Wiki
 docker-compose up -d
+```
+### 查看初始化日志
+```bash
+docker-compose logs kafka-init
+```
+
+### 验证 topics 是否创建成功
+```bash
+# 使用 docker exec 查看
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+
+# 或者访问 AKHQ 管理界面
+# http://localhost:8081
 ```
 
 ### 4. 新建sqlite数据库

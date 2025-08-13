@@ -70,6 +70,11 @@ public class DocumentGenerationTask {
     private String priority = "NORMAL";
     
     /**
+     * 项目名称（用于Memory服务索引）
+     */
+    private String projectName;
+    
+    /**
      * 创建文档生成任务
      * @param catalogue 目录实体
      * @param fileTree 文件树
@@ -79,18 +84,19 @@ public class DocumentGenerationTask {
      */
     public static DocumentGenerationTask create(Catalogue catalogue, String fileTree, 
                                               CatalogueStruct catalogueStruct, String localPath) {
-        return new DocumentGenerationTask(
-            catalogue.getTaskId(),
-            catalogue.getCatalogueId(),
-            catalogue.getName(),
-            catalogue.getPrompt(),
-            localPath,
-            fileTree,
-            catalogueStruct,
-            0,
-            LocalDateTime.now(),
-            "NORMAL"
-        );
+        DocumentGenerationTask task = new DocumentGenerationTask();
+        task.setTaskId(catalogue.getTaskId());
+        task.setCatalogueId(catalogue.getCatalogueId());
+        task.setCatalogueName(catalogue.getName());
+        task.setPrompt(catalogue.getPrompt());
+        task.setLocalPath(localPath);
+        task.setFileTree(fileTree);
+        task.setCatalogueStruct(catalogueStruct);
+        task.setRetryCount(0);
+        task.setCreateTime(LocalDateTime.now());
+        task.setPriority("NORMAL");
+        // projectName将在CatalogueServiceImpl中设置
+        return task;
     }
     
     /**

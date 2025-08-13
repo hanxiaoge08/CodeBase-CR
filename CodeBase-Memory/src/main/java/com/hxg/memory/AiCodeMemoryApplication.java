@@ -19,7 +19,6 @@ package com.hxg.memory;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 
 /**
  * @author yuluo
@@ -27,11 +26,11 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
  */
 
 @SpringBootApplication
-public class ChatMemoryApplication {
+public class AiCodeMemoryApplication {
 
 	public static void main(String[] args) {
 
-		SpringApplication.run(ChatMemoryApplication.class, args);
+		SpringApplication.run(AiCodeMemoryApplication.class, args);
 	}
 
 }

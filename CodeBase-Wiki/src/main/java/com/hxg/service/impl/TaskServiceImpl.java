@@ -94,8 +94,9 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements IT
             // 缓存项目路径到CatalogueService，避免循环依赖
             catalogueService.cacheTaskProjectPath(context.getTaskId(), context.getLocalPath());
 
-            //生成目录详情
-            catalogueService.parallelGenerateCatalogueDetail(fileTree, catalogueDTO, context.getLocalPath());
+            //生成目录详情 - 传递projectName
+            String projectName = task.getProjectName();
+            catalogueService.parallelGenerateCatalogueDetail(fileTree, catalogueDTO, context.getLocalPath(), projectName);
             task.setStatus(TaskStatusEnum.COMPLETED);
             task.setUpdateTime(LocalDateTime.now());
         } catch (Exception e) {

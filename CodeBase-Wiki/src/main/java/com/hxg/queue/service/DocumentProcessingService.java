@@ -20,6 +20,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author hxg
@@ -37,6 +39,9 @@ public class DocumentProcessingService {
     
     @Value("${project.wiki.prompt.doc-version}")
     private String docPromptVersion;
+    
+    // 用于记录已经索引代码文件的任务，防止重复索引
+    private static final Set<String> codeFilesIndexedTasks = ConcurrentHashMap.newKeySet();
     
     public DocumentProcessingService(LlmService llmService, 
                                    CatalogueMapper catalogueMapper,
@@ -302,32 +307,38 @@ public class DocumentProcessingService {
             catalogue.setContent(content);
             catalogue.setStatus(CatalogueStatusEnum.COMPLETED.getCode());
             
+            // 使用projectName作为repositoryId，如果没有则使用taskId
+            String repositoryId = task.getProjectName() != null ? task.getProjectName() : task.getTaskId();
+            
             // 异步索引单个文档
-            memoryIntegrationService.indexDocumentToMemoryAsync(task.getTaskId(), catalogue)
+            memoryIntegrationService.indexDocumentToMemoryAsync(repositoryId, catalogue)
                 .whenComplete((result, throwable) -> {
                     if (throwable != null) {
-                        log.warn("索引文档到Mem0失败: taskId={}, catalogueName={}, error={}", 
-                                task.getTaskId(), task.getCatalogueName(), throwable.getMessage());
+                        log.warn("索引文档到Mem0失败: repositoryId={}, catalogueName={}, error={}", 
+                                repositoryId, task.getCatalogueName(), throwable.getMessage());
                     } else {
-                        log.info("文档索引到Mem0成功: taskId={}, catalogueName={}", 
-                                task.getTaskId(), task.getCatalogueName());
+                        log.debug("成功索引文档到Mem0: repositoryId={}, catalogueName={}", 
+                                repositoryId, task.getCatalogueName());
                     }
                 });
             
-            // 触发代码文件索引（每个任务只执行一次）
-            memoryIntegrationService.indexCodeFilesToMemoryAsync(task.getTaskId(), task.getLocalPath())
-                .whenComplete((result, throwable) -> {
-                    if (throwable != null) {
-                        log.warn("索引代码文件到Mem0失败: taskId={}, error={}", 
-                                task.getTaskId(), throwable.getMessage());
-                    } else {
-                        log.info("代码文件索引到Mem0成功: taskId={}", task.getTaskId());
-                    }
-                });
-                
+            // 索引代码文件（每个任务只索引一次）
+            if (!codeFilesIndexedTasks.contains(task.getTaskId())) {
+                codeFilesIndexedTasks.add(task.getTaskId());
+                memoryIntegrationService.indexCodeFilesToMemoryAsync(repositoryId, task.getLocalPath())
+                    .whenComplete((result, throwable) -> {
+                        if (throwable != null) {
+                            log.warn("索引代码文件到Mem0失败: repositoryId={}, error={}", 
+                                    repositoryId, throwable.getMessage());
+                        } else {
+                            log.debug("成功索引代码文件到Mem0: repositoryId={}", repositoryId);
+                        }
+                    });
+            }
+            
         } catch (Exception e) {
-            log.warn("索引到Mem0记忆系统时发生异常: taskId={}, error={}", 
-                    task.getTaskId(), e.getMessage(), e);
+            log.error("索引到Mem0记忆系统失败: taskId={}, catalogueName={}, error={}", 
+                    task.getTaskId(), task.getCatalogueName(), e.getMessage(), e);
         }
     }
     

@@ -1,8 +1,6 @@
 fastapi==0.115.8
 uvicorn==0.34.0
 pydantic==2.10.4
-mem0ai==v0.1.111
+mem0ai>=0.1.115
 python-dotenv==1.0.1
-psycopg2-binary==2.9.9
-langchain_neo4j
-rank_bm25
+psycopg2-binary==2.9.10
