@@ -105,11 +105,11 @@ docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 新建一个sqlite数据库，数据文件存为data/chat-memory.db(在SQLiteConfig.java中)
 
-### 4. 启动后端服务
+### 5. 启动后端服务
 
 本地idea启动的话，先启动memory服务再启动其他服务
 
-### 5. 启动前端应用
+### 6. 启动前端应用
 
 ```bash
 # 进入前端目录
@@ -125,14 +125,15 @@ npm start
 # 前端需要强制跨域（在chrome快捷方式属性中目标最后加入 --args --disable-web-security --user-data-dir=<空白存储目录用于存储数据>)
 ```
 
-### 6. 访问应用
+### 7. 访问应用
 
 - **前端界面**: http://localhost:3000
 - **Kafka管理界面**: http://localhost:8000 (AKHQ)
 - **管理后台**: http://localhost:3000/admin
 
-### 7. 配置GitHub Webhook (可选)
+### 8. 配置GitHub Webhook (可选)
 
+本地调试时，可使用ngrok代理本地端口
 如需使用代码审查功能，在GitHub仓库设置中添加Webhook：
 - **Payload URL**: `http://your-domain:8080/api/v1/github/events`
 - **Content type**: `application/json`
