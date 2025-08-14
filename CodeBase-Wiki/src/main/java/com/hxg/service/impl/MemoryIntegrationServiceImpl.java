@@ -1,9 +1,8 @@
 package com.hxg.service.impl;
 
-import com.hxg.memory.MemoryServiceClient;
+import com.hxg.queue.model.MemoryIndexTask;
+import com.hxg.queue.producer.MemoryIndexProducer;
 import com.hxg.model.dto.BatchDocumentRequest;
-import com.hxg.model.dto.CodeFileRequest;
-import com.hxg.model.dto.DocumentRequest;
 import com.hxg.model.entity.Catalogue;
 import com.hxg.service.IMemoryIntegrationService;
 import org.slf4j.Logger;
@@ -33,17 +32,14 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     private static final Logger logger = LoggerFactory.getLogger(MemoryIntegrationServiceImpl.class);
     
     @Autowired
-    private MemoryServiceClient memoryServiceClient;
+    private MemoryIndexProducer memoryIndexProducer;
     
     // 支持的代码文件扩展名
     private static final Set<String> CODE_EXTENSIONS = Set.of(
         "java", "js", "ts", "py", "go", "cpp", "c", "h", "cs", "php", "rb", "kt", "swift"
     );
     
-    // 支持的文档文件扩展名
-    private static final Set<String> DOCUMENT_EXTENSIONS = Set.of(
-        "md", "txt", "rst", "adoc", "org"
-    );
+    // 支持的文档文件扩展名（暂未使用，保留扩展需要时再启用）
     
     @Override
     public CompletableFuture<Void> indexProjectToMemoryAsync(String repositoryId, 
@@ -73,15 +69,19 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                     }
                 }
                 
-                // 批量索引文档
+                // 批量改为逐条发送到Kafka，避免大消息
                 if (!documents.isEmpty()) {
-                    try {
-                        BatchDocumentRequest batchRequest = new BatchDocumentRequest(repositoryId, documents);
-                        memoryServiceClient.batchAddDocuments(batchRequest);
-                        logger.info("批量文档索引完成: repositoryId={}, 文档数量={}", repositoryId, documents.size());
-                    } catch (Exception ex) {
-                        logger.error("批量索引文档失败: repositoryId={}", repositoryId, ex);
-                    }
+                    documents.forEach(doc -> {
+                        MemoryIndexTask task = new MemoryIndexTask();
+                        task.setType("document");
+                        task.setRepositoryId(repositoryId);
+                        task.setDocumentName(doc.getName());
+                        task.setDocumentContent(doc.getContent());
+                        task.setDocumentUrl(doc.getUrl());
+                        task.setMetadata(doc.getMetadata());
+                        memoryIndexProducer.sendDocumentTask(task);
+                    });
+                    logger.info("批量文档索引任务已投递到Kafka: repositoryId={}, 文档数量={}", repositoryId, documents.size());
                 }
                 
                 // 并行索引代码文件
@@ -114,15 +114,14 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
                 String documentUrl = generateDocumentUrl(catalogue);
                 Map<String, Object> metadata = createCatalogueMetadata(catalogue, catalogue.getTaskId());
                 
-                DocumentRequest request = new DocumentRequest(
-                    repositoryId,  // 使用传入的repositoryId（应该是projectName）
-                    catalogue.getName(),
-                    catalogue.getContent(),
-                    documentUrl,
-                    metadata
-                );
-                
-                memoryServiceClient.addDocument(request);
+                MemoryIndexTask task = new MemoryIndexTask();
+                task.setType("document");
+                task.setRepositoryId(repositoryId);
+                task.setDocumentName(catalogue.getName());
+                task.setDocumentContent(catalogue.getContent());
+                task.setDocumentUrl(documentUrl);
+                task.setMetadata(metadata);
+                memoryIndexProducer.sendDocumentTask(task);
                 
                 logger.debug("单个文档记忆索引完成: repositoryId={}, catalogueName={}", repositoryId, catalogue.getName());
                 
@@ -171,13 +170,9 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
     
     @Override
     public boolean isMemoryServiceAvailable() {
-        try {
-            Map<String, Object> result = memoryServiceClient.healthCheck();
-            return result != null && "UP".equals(result.get("status"));
-        } catch (Exception e) {
-            logger.debug("Memory服务健康检查失败: {}", e.getMessage());
-            return false;
-        }
+        // Kafka 模式下，写入由队列承接，不再直连 Memory 服务
+        // 这里返回 true，将可靠性交由 Kafka（重试/DLQ）与 Memory 消费端保障
+        return true;
     }
     
     /**
@@ -241,16 +236,15 @@ public class MemoryIntegrationServiceImpl implements IMemoryIntegrationService {
             String fileName = codeFile.getFileName().toString();
             String fileExtension = getFileExtension(fileName);
             
-            // 创建请求并调用Feign客户端
-            CodeFileRequest request = new CodeFileRequest(
-                repositoryId,  // 使用传入的repositoryId（应该是projectName）
-                fileName,
-                relativePath,
-                content,
-                fileExtension
-            );
-            
-            memoryServiceClient.addCodeFile(request);
+                    // 构造Kafka任务并发送
+                    MemoryIndexTask task = new MemoryIndexTask();
+                    task.setType("code_file");
+                    task.setRepositoryId(repositoryId);
+                    task.setFileName(fileName);
+                    task.setFilePath(relativePath);
+                    task.setFileContent(content);
+                    task.setFileType(fileExtension);
+                    memoryIndexProducer.sendCodeFileTask(task);
             
             return true;
             

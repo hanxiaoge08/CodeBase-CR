@@ -2,6 +2,21 @@ server:
   port: 8080
 
 spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: memory-index-consumer-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        spring.json.trusted.packages: "com.hxg.memory.queue.model,com.hxg.queue.model"
+        spring.json.value.default.type: com.hxg.memory.queue.model.MemoryIndexTask
+        spring.json.use.type.headers: false
   ai:
     dashscope:
       api-key: ${AI_DASHSCOPE_API_KEY}
@@ -44,3 +59,15 @@ mem0:
         api-key: ${AI_DASHSCOPE_API_KEY}
         model: text-embedding-v4
         openai-base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+project:
+  memory:
+    kafka:
+      topics:
+        mem-index: "memory-index-topic"
+        mem-retry: "memory-index-retry-topic"
+        mem-dlq: "memory-index-dlq"
+      consumer:
+        max-concurrency: 2
+        process-interval: 1000
+        max-retry: 3

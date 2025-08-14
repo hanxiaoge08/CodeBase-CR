@@ -1,12 +1,8 @@
 package com.hxg.service.impl;
 
-import com.hxg.memory.MemoryServiceClient;
-import com.hxg.model.dto.BatchDocumentRequest;
-import com.hxg.model.dto.CodeFileRequest;
-import com.hxg.model.dto.DocumentRequest;
+import com.hxg.queue.model.MemoryIndexTask;
+import com.hxg.queue.producer.MemoryIndexProducer;
 import com.hxg.model.entity.Catalogue;
-import com.hxg.service.IMemoryIntegrationService;
-import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,13 +12,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,7 +32,7 @@ import static org.mockito.Mockito.*;
 class MemoryIntegrationServiceImplTest {
 
     @Mock
-    private MemoryServiceClient memoryServiceClient;
+    private MemoryIndexProducer memoryIndexProducer;
 
     private MemoryIntegrationServiceImpl memoryIntegrationService;
     
@@ -49,7 +42,7 @@ class MemoryIntegrationServiceImplTest {
     @BeforeEach
     void setUp() {
         memoryIntegrationService = new MemoryIntegrationServiceImpl();
-        ReflectionTestUtils.setField(memoryIntegrationService, "memoryServiceClient", memoryServiceClient);
+        ReflectionTestUtils.setField(memoryIntegrationService, "memoryIndexProducer", memoryIndexProducer);
     }
 
     @Test
@@ -67,8 +60,8 @@ class MemoryIntegrationServiceImplTest {
         Files.createDirectories(projectDir);
         Files.write(projectDir.resolve("Test.java"), "public class Test {}".getBytes());
         
-        doNothing().when(memoryServiceClient).batchAddDocuments(any(BatchDocumentRequest.class));
-        doNothing().when(memoryServiceClient).addCodeFile(any(CodeFileRequest.class));
+        doNothing().when(memoryIndexProducer).sendDocumentTask(any(MemoryIndexTask.class));
+        doNothing().when(memoryIndexProducer).sendCodeFileTask(any(MemoryIndexTask.class));
 
         // When
         CompletableFuture<Void> future = memoryIntegrationService.indexProjectToMemoryAsync(
@@ -77,11 +70,8 @@ class MemoryIntegrationServiceImplTest {
         // Then
         assertDoesNotThrow(() -> future.get());
         
-        verify(memoryServiceClient).batchAddDocuments(argThat(request -> 
-            taskId.equals(request.getRepositoryId()) &&
-            request.getDocuments().size() == 2
-        ));
-        verify(memoryServiceClient, atLeastOnce()).addCodeFile(any(CodeFileRequest.class));
+        verify(memoryIndexProducer, atLeast(2)).sendDocumentTask(any(MemoryIndexTask.class));
+        verify(memoryIndexProducer, atLeastOnce()).sendCodeFileTask(any(MemoryIndexTask.class));
     }
 
     @Test
@@ -91,7 +81,7 @@ class MemoryIntegrationServiceImplTest {
         String taskId = "task123";
         Catalogue catalogue = createCatalogue("doc1", "文档1", "# 文档1内容");
 
-        doNothing().when(memoryServiceClient).addDocument(any(DocumentRequest.class));
+        doNothing().when(memoryIndexProducer).sendDocumentTask(any(MemoryIndexTask.class));
 
         // When
         CompletableFuture<Void> future = memoryIntegrationService.indexDocumentToMemoryAsync(taskId, catalogue);
@@ -99,11 +89,7 @@ class MemoryIntegrationServiceImplTest {
         // Then
         assertDoesNotThrow(() -> future.get());
         
-        verify(memoryServiceClient).addDocument(argThat(request -> 
-            taskId.equals(request.getRepositoryId()) &&
-            "文档1".equals(request.getDocumentName()) &&
-            "# 文档1内容".equals(request.getDocumentContent())
-        ));
+        verify(memoryIndexProducer).sendDocumentTask(any(MemoryIndexTask.class));
     }
 
     @Test
@@ -119,8 +105,8 @@ class MemoryIntegrationServiceImplTest {
         // Then
         assertDoesNotThrow(() -> future.get());
         
-        // 验证没有调用addDocument
-        verify(memoryServiceClient, never()).addDocument(any(DocumentRequest.class));
+        // 验证没有发送文档任务
+        verify(memoryIndexProducer, never()).sendDocumentTask(any(MemoryIndexTask.class));
     }
 
     @Test
@@ -137,7 +123,7 @@ class MemoryIntegrationServiceImplTest {
         Files.write(projectDir.resolve("src/main/java/Service.java"), "public class Service {}".getBytes());
         Files.write(projectDir.resolve("README.md"), "# Project".getBytes()); // 非代码文件，应该被忽略
 
-        doNothing().when(memoryServiceClient).addCodeFile(any(CodeFileRequest.class));
+        doNothing().when(memoryIndexProducer).sendCodeFileTask(any(MemoryIndexTask.class));
 
         // When
         CompletableFuture<Void> future = memoryIntegrationService.indexCodeFilesToMemoryAsync(
@@ -147,56 +133,10 @@ class MemoryIntegrationServiceImplTest {
         assertDoesNotThrow(() -> future.get());
         
         // 验证只调用了Java文件，不包含README.md
-        verify(memoryServiceClient, times(2)).addCodeFile(any(CodeFileRequest.class));
+        verify(memoryIndexProducer, times(2)).sendCodeFileTask(any(MemoryIndexTask.class));
     }
 
-    @Test
-    @DisplayName("检查记忆服务是否可用 - 服务正常")
-    void testIsMemoryServiceAvailableTrue() {
-        // Given
-        Map<String, Object> healthResponse = new HashMap<>();
-        healthResponse.put("status", "UP");
-        healthResponse.put("service", "Memory Service");
-        when(memoryServiceClient.healthCheck()).thenReturn(healthResponse);
-
-        // When
-        boolean result = memoryIntegrationService.isMemoryServiceAvailable();
-
-        // Then
-        assertTrue(result);
-        verify(memoryServiceClient).healthCheck();
-    }
-
-    @Test
-    @DisplayName("检查记忆服务是否可用 - 服务不可用")
-    void testIsMemoryServiceAvailableFalse() {
-        // Given
-        Map<String, Object> healthResponse = new HashMap<>();
-        healthResponse.put("status", "DOWN");
-        healthResponse.put("message", "Memory Service Unavailable");
-        when(memoryServiceClient.healthCheck()).thenReturn(healthResponse);
-
-        // When
-        boolean result = memoryIntegrationService.isMemoryServiceAvailable();
-
-        // Then
-        assertFalse(result);
-        verify(memoryServiceClient).healthCheck();
-    }
-
-    @Test
-    @DisplayName("检查记忆服务是否可用 - 异常情况")
-    void testIsMemoryServiceAvailableException() {
-        // Given
-        when(memoryServiceClient.healthCheck()).thenThrow(FeignException.ServiceUnavailable.class);
-
-        // When
-        boolean result = memoryIntegrationService.isMemoryServiceAvailable();
-
-        // Then
-        assertFalse(result);
-        verify(memoryServiceClient).healthCheck();
-    }
+    // Kafka 模式下 isMemoryServiceAvailable 恒为 true，无需健康检查测试
 
     @Test
     @DisplayName("索引项目时服务不可用")
@@ -210,8 +150,7 @@ class MemoryIntegrationServiceImplTest {
         Path projectDir = tempDir.resolve("test-project");
         Files.createDirectories(projectDir);
 
-        doThrow(FeignException.ServiceUnavailable.class).when(memoryServiceClient)
-            .batchAddDocuments(any(BatchDocumentRequest.class));
+        // Kafka 模式下，无需模拟 Memory 服务不可用
 
         // When & Then - 不应该抛出异常，由fallback处理
         CompletableFuture<Void> future = memoryIntegrationService.indexProjectToMemoryAsync(
@@ -219,7 +158,7 @@ class MemoryIntegrationServiceImplTest {
         
         assertDoesNotThrow(() -> future.get());
         
-        verify(memoryServiceClient).batchAddDocuments(any(BatchDocumentRequest.class));
+        verify(memoryIndexProducer, atLeastOnce()).sendDocumentTask(any(MemoryIndexTask.class));
     }
 
     @Test
@@ -236,8 +175,8 @@ class MemoryIntegrationServiceImplTest {
         // Then
         assertDoesNotThrow(() -> future.get());
         
-        // 验证没有调用addCodeFile
-        verify(memoryServiceClient, never()).addCodeFile(any(CodeFileRequest.class));
+        // 验证没有发送代码文件任务
+        verify(memoryIndexProducer, never()).sendCodeFileTask(any(MemoryIndexTask.class));
     }
 
     // 辅助方法

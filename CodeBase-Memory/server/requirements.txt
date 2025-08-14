@@ -4,3 +4,5 @@ pydantic==2.10.4
 mem0ai>=0.1.115
 python-dotenv==1.0.1
 psycopg2-binary==2.9.10
+langchain_neo4j
+rank_bm25

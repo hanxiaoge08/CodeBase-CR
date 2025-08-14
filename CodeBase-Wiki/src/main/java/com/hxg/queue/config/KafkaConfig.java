@@ -1,6 +1,7 @@
 package com.hxg.queue.config;
 
 import com.hxg.queue.model.DocumentGenerationTask;
+import com.hxg.queue.model.MemoryIndexTask;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -63,6 +64,33 @@ public class KafkaConfig {
     public KafkaTemplate<String, DocumentGenerationTask> kafkaTemplate() {
         KafkaTemplate<String, DocumentGenerationTask> template = new KafkaTemplate<>(producerFactory());
         log.info("KafkaTemplate created for DocumentGenerationTask");
+        return template;
+    }
+
+    /**
+     * ProducerFactory for MemoryIndexTask
+     */
+    @Bean
+    public ProducerFactory<String, MemoryIndexTask> memoryIndexProducerFactory() {
+        Map<String, Object> configProps = new HashMap<>();
+        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(ProducerConfig.RETRIES_CONFIG, 3);
+        configProps.put(ProducerConfig.ACKS_CONFIG, "1");
+        configProps.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
+        configProps.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        log.info("Kafka Producer configured for MemoryIndexTask with bootstrap servers: {}", bootstrapServers);
+        return new DefaultKafkaProducerFactory<>(configProps);
+    }
+
+    /**
+     * KafkaTemplate for MemoryIndexTask
+     */
+    @Bean
+    public KafkaTemplate<String, MemoryIndexTask> memoryIndexKafkaTemplate() {
+        KafkaTemplate<String, MemoryIndexTask> template = new KafkaTemplate<>(memoryIndexProducerFactory());
+        log.info("KafkaTemplate created for MemoryIndexTask");
         return template;
     }
     
