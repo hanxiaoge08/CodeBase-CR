@@ -9,15 +9,15 @@
 
 - 🔍 **智能仓库分析**: 深度分析GitHub仓库结构、代码组织和技术架构
 - 📚 **AI文档生成**: 基于代码内容自动生成项目文档和技术说明
-- 🤖 **智能代码审查**: 集成GitHub Webhook的PR自动审查和建议
+- 🤖 **智能代码审查**: 1+4+1多智能体工作流，包含风格、逻辑、安全等全方位审查
 - 📊 **任务管理系统**: 完整的分析任务创建、跟踪和管理功能
-- 🎯 **精确定位分析**: 提供文件和行级别的详细分析结果
+- 🎯 **精确代码切片**: 基于Tree-sitter的AST解析服务，提供函数级代码分块
 - 🌐 **现代化界面**: React前端提供直观的用户交互体验
 - ⚡ **异步处理**: 基于Kafka消息队列的高性能后台任务处理
-- 📋 **知识库**: 结合编码规范和项目上下文的RAG检索增强
+- 🔍 **混合检索增强**: Elasticsearch BM25+kNN+RRF融合的增强混合检索
 - 🚀 **并发控制**: 智能的任务并发限制和API访问频率控制
-- 🧠 **记忆系统**: 集成Mem0记忆系统的智能知识索引
-- Chat to repository（开发中）
+- 🧠 **智能上下文**: 基于任务级数据隔离的RAG检索增强生成
+- 💬 **Chat to Repository**: 支持与代码仓库的智能对话交互
 
 ## 技术栈
 
@@ -25,10 +25,11 @@
 - **Java 21** + **Spring Boot 3.4.5** - 核心后端框架
 - **Spring AI1.0.0** + **Spring AI Alibaba1.0.0.3** - AI集成和大模型调用
 - **Apache Kafka** - 消息队列系统，支持异步文档生成和Code Review
+- **Elasticsearch 8.15.0** - 混合检索引擎，支持BM25+kNN+RRF融合算法
 - **SQLite** + **MyBatis-Plus** - 数据持久化
 - **GitHub API** + **JGit** - 代码仓库集成
 - **百炼平台Qwen3** - 大语言模型服务
-- **Mem0** - 记忆系统集成，提供智能知识索引
+- **Tree-sitter** + **FastAPI** - 代码AST解析和切片服务
 
 ### 前端技术
 - **React 18** + **Ant Design 5.x** - 现代化UI框架
@@ -38,10 +39,12 @@
 - **highlight.js** - 代码语法高亮
 
 ### 系统架构
-- **多模块设计**: CodeBase-Review(审查) + CodeBase-Wiki(分析)+CodeBase-Memory(记忆) + Frontend(界面)
+- **多模块设计**: CodeBase-Review(审查) + CodeBase-Wiki(分析) + AST服务(切片) + Frontend(界面)
 - **Kafka异步架构**: 生产者-消费者模式的消息队列处理
+- **混合检索架构**: Elasticsearch BM25文本检索 + kNN向量检索 + RRF融合算法
+- **多智能体工作流**: 1+4+1架构，包含协调、初筛、并行专家分析、汇总合成
 - **RESTful API**: 前后端分离的接口设计
-- **向量检索增强**: RAG技术结合知识库的智能分析
+- **AST代码解析**: Tree-sitter支持多语言代码结构化分析
 
 ## 快速开始
 
@@ -56,31 +59,57 @@
 
 ### 2. 配置环境变量
 
-可在环境变量中永久设置
+**重要提醒**: 项目已将敏感配置信息迁移到环境变量，请参考完整的[环境变量配置文档](ENVIRONMENT_VARIABLES.md)进行配置。
 
+#### 快速配置
 ```bash
-# AI模型配置（二选一）
-export DASHSCOPE_API_KEY=your-dashscope-api-key  # 阿里云通义千问
-export OPENAI_API_KEY=your-openai-api-key        # OpenAI
+# 1. 复制环境变量模板
+cp environment-template.env .env
 
-# GitHub集成配置（用于代码审查功能）
-export GITHUB_TOKEN=your-github-token
-export GITHUB_WEBHOOK_SECRET=your-webhook-secret
+# 2. 编辑 .env 文件，设置必需的环境变量
+# 必需配置项：
+export DASHSCOPE_API_KEY=your-dashscope-api-key     # 阿里云大模型API密钥
+export GITHUB_TOKEN=your-github-token               # GitHub访问令牌
+export GITHUB_WEBHOOK_SECRET=your-webhook-secret    # GitHub Webhook密钥
 
+# 通知服务配置（如需使用）
+export FEISHU_WIKI_WEBHOOK=your-feishu-webhook      # 飞书机器人
+export DINGTALK_WIKI_WEBHOOK=your-dingtalk-webhook  # 钉钉机器人
+
+# 其他服务配置（有默认值）
+export REDIS_HOST=your-redis-host                   # Redis服务器
+export REDIS_PASSWORD=your-redis-password           # Redis密码
+export KAFKA_BOOTSTRAP_SERVERS=your-kafka-servers   # Kafka集群
+export ELASTICSEARCH_URIS=your-es-uris              # Elasticsearch集群
 ```
 
-### 3. 启动Mem0服务
+#### 配置说明
+- 📋 **完整配置清单**: 查看 [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) 获取所有环境变量的详细说明
+- 📝 **模板文件**: 使用 `environment-template.env` 作为配置模板
+- 🔐 **安全注意**: 不要将包含真实密钥的 `.env` 文件提交到版本控制
+
+### 3. 启动AST代码解析服务
 
 ```bash
-# mem0最好改成最新版本，最近修复了一个重要问题
-cp .env.example .env
-#修改.env中的api-key
+# 进入AST服务目录
+cd ast
 
-cd CodeBase-Memory/server
-docker-compose up -d
+# 创建虚拟环境（推荐）
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或 venv\Scripts\activate  # Windows
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动服务（后台运行）
+nohup python -m uvicorn server:app --host 0.0.0.0 --port 8566 --workers 2 > ast.txt 2>&1 & echo $! > ast.pid
+
+# 检查服务状态
+curl http://localhost:8566/health
 ```
 
-### 3. 启动Kafka服务
+### 4. 启动Kafka服务
 
 ```bash
 # 使用Docker Compose启动Kafka
@@ -101,15 +130,51 @@ docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 # http://localhost:8081
 ```
 
-### 4. 新建sqlite数据库
+### 5. 启动Elasticsearch服务
 
-新建一个sqlite数据库，数据文件存为data/chat-memory.db(在SQLiteConfig.java中)
+```bash
+# 使用Docker启动Elasticsearch 8.15.0
+docker run -d \
+  --name elasticsearch \
+  -p 9200:9200 \
+  -p 9300:9300 \
+  -e "discovery.type=single-node" \
+  -e "xpack.security.enabled=false" \
+  -e "ES_JAVA_OPTS=-Xms1g -Xmx1g" \
+  elasticsearch:8.15.0
 
-### 5. 启动后端服务
+# 检查服务状态
+curl http://localhost:9200
+```
 
-本地idea启动的话，先启动memory服务再启动其他服务
+### 6. 新建SQLite数据库
 
-### 6. 启动前端应用
+```bash
+# 创建数据目录
+mkdir -p data
+
+# 数据库会在首次启动时自动创建
+# 位置：data/codebasewiki_db.sqlite
+```
+
+### 7. 启动后端服务
+
+```bash
+
+ngrok http 8086
+# 推荐启动顺序：
+# 1. AST服务 (端口8566)
+# 2. Elasticsearch (端口9200) 
+# 3. Kafka (端口9092)
+# 4. CodeBase-Wiki服务 (端口8085)
+# 5. CodeBase-Review服务 (端口8086)
+
+# 使用IDE启动或Maven命令
+mvn spring-boot:run -pl CodeBase-Wiki
+mvn spring-boot:run -pl CodeBase-Review
+```
+
+### 8. 启动前端应用
 
 ```bash
 # 进入前端目录
@@ -125,13 +190,16 @@ npm start
 # 前端需要强制跨域（在chrome快捷方式属性中目标最后加入 --args --disable-web-security --user-data-dir=<空白存储目录用于存储数据>)
 ```
 
-### 7. 访问应用
+### 9. 访问应用
 
 - **前端界面**: http://localhost:3000
-- **Kafka管理界面**: http://localhost:8000 (AKHQ)
-- **管理后台**: http://localhost:3000/admin
+- **Wiki服务**: http://localhost:8085
+- **Review服务**: http://localhost:8086
+- **AST解析服务**: http://localhost:8566
+- **Elasticsearch**: http://localhost:9200
+- **Kafka管理界面**: http://localhost:8001 (AKHQ)
 
-### 8. 配置GitHub Webhook (可选)
+### 10. 配置GitHub Webhook (可选)
 
 本地调试时，可使用ngrok代理本地端口
 如需使用代码审查功能，在GitHub仓库设置中添加Webhook：
@@ -186,21 +254,24 @@ memory-service:
 ### 🔍 仓库分析流程
 1. **创建任务**: 通过前端界面创建代码仓库分析任务
 2. **获取代码**: 从GitHub克隆仓库或上传项目压缩包
-3. **结构分析**: 深度解析项目文件结构和代码组织
-4. **AI目录生成**: 基于代码内容智能生成文档目录结构
-5. **异步文档生成**: 通过Kafka消息队列异步生成每个目录的详细文档
-7. **状态同步**: 实时更新任务状态和进度
-8. **记忆索引**: 将生成的文档和代码自动索引到Mem0记忆系统
+3. **代码切片**: 使用AST解析服务将代码切分为函数级别的结构化块
+4. **结构分析**: 深度解析项目文件结构和代码组织关系
+5. **AI目录生成**: 基于代码内容智能生成文档目录结构
+6. **异步文档生成**: 通过Kafka消息队列异步生成每个目录的详细文档
+7. **混合索引**: 将代码块和文档索引到Elasticsearch，支持BM25+kNN检索
+8. **状态同步**: 实时更新任务状态和进度
 9. **结果展示**: 在前端界面展示分析结果和生成的文档
 
-### 🤖 代码审查流程  
+### 🤖 代码审查流程 (1+4+1多智能体架构)
 1. **接收事件**: GitHub发送Pull Request事件到Webhook端点
-2. **验证签名**: 验证GitHub Webhook签名确保安全性
-3. **解析事件**: 提取PR信息并创建审查任务
-4. **获取差异**: 通过GitHub API获取PR的diff内容
-5. **知识检索**: 使用RAG从知识库中检索相关编码规范
-6. **AI审查**: 调用LLM分析代码并生成审查建议
-7. **发布结果**: 将审查结果发布为PR评论
+2. **ReviewCoordinatorAgent**: 解析PR元数据、提取diff统计信息
+3. **TriageAgent**: 初筛和路由决策，判断审查类型和复杂度
+4. **并行专家分析**: 
+   - **StyleConventionAgent**: 编码规范检查（集成RAG检索）
+   - **LogicContextAgent**: 逻辑上下文分析（基于AST解析）
+   - **SecurityScanAgent**: 安全漏洞扫描
+5. **ReportSynthesizerAgent**: 汇总各专家分析结果
+6. **发布结果**: 将综合评审报告发布为PR评论
 
 ### 📊 任务管理流程
 1. **任务创建**: 支持Git仓库和文件上传两种方式
@@ -228,22 +299,29 @@ memory-service:
 ```
 CodeBase-CR/                           # 主项目根目录
 ├── CodeBase-Review/                   # 代码审查模块
-│   ├── src/main/java/com/hxg/crApp/
+│   ├── src/main/java/com/way/crApp/
 │   │   ├── adapter/                   # 适配器层
 │   │   │   ├── github/               # GitHub API适配器
 │   │   │   └── llm/                  # LLM适配器
+│   │   ├── agent/                    # 多智能体工作流
+│   │   │   ├── ReviewCoordinatorAgent.java    # 协调代理
+│   │   │   ├── TriageAgent.java              # 初筛代理
+│   │   │   ├── StyleConventionAgent.java     # 风格检查
+│   │   │   ├── LogicContextAgent.java        # 逻辑分析
+│   │   │   ├── SecurityScanAgent.java        # 安全扫描
+│   │   │   └── ReportSynthesizerAgent.java   # 报告合成
 │   │   ├── controller/               # REST控制器
 │   │   ├── service/                  # 业务服务层
-│   │   ├── knowledge/                # 知识库管理
+│   │   ├── client/                   # ES Wiki服务客户端
 │   │   └── dto/                      # 数据传输对象
 │   └── src/main/resources/           # 配置和资源文件
 │
 ├── CodeBase-Wiki/                     # 仓库分析模块
-│   ├── src/main/java/com/hxg/
+│   ├── src/main/java/com/way/
 │   │   ├── controller/               # API控制器
 │   │   ├── service/                  # 分析服务
 │   │   │   ├── impl/                 # 服务实现类
-│   │   │   └── async/                # 异步服务（已迁移到Kafka）
+│   │   │   └── EnhancedHybridSearchService.java  # 混合检索服务
 │   │   ├── queue/                    # Kafka消息队列层
 │   │   │   ├── config/               # Kafka配置
 │   │   │   ├── producer/             # 消息生产者
@@ -255,6 +333,7 @@ CodeBase-CR/                           # 主项目根目录
 │   │   │   ├── prompt/               # AI提示词模板
 │   │   │   ├── service/              # LLM服务
 │   │   │   └── tool/                 # AI工具（FileSystemTool等）
+│   │   ├── config/                   # Elasticsearch配置
 │   │   └── mapper/                   # 数据访问层
 │   ├── docker-compose.yml            # Kafka Docker配置
 │   ├── start-kafka.ps1               # Kafka启动脚本
@@ -270,9 +349,16 @@ CodeBase-CR/                           # 主项目根目录
 │   ├── public/                       # 静态资源
 │   └── package.json                  # 前端依赖配置
 │
+├── ast/                              # AST代码解析服务
+│   ├── server.py                     # FastAPI服务主文件
+│   ├── requirements.txt              # Python依赖
+│   └── README.md                     # AST服务说明
+│
 ├── data/                             # 数据存储目录
 ├── logs/                             # 日志文件目录
 ├── repository/                       # 代码仓库缓存
+├── environment-template.env          # 环境变量模板
+├── ENVIRONMENT_VARIABLES.md          # 环境变量配置文档
 └── pom.xml                          # Maven主配置文件
 ```
 
@@ -439,6 +525,16 @@ services:
 
 ## 更新日志
 
+### v3.0.0 (2025-01-XX)
+- 🤖 **多智能体架构**: 实现1+4+1代码审查工作流，包含协调、初筛、并行专家分析、汇总合成
+- 🔍 **混合检索升级**: 替换Mem0为Elasticsearch 8.15.0，支持BM25+kNN+RRF融合算法
+- 🎯 **AST代码解析**: 新增Tree-sitter基础的代码切片服务，支持函数级结构化分析
+- 🏗️ **架构重构**: 数据字段规范化，repoId和taskId概念分离，支持任务级数据隔离
+- 🔐 **安全增强**: 所有敏感配置迁移到环境变量，提供完整的配置模板和文档
+- 📈 **性能优化**: RRF融合算法提升检索质量，TopK策略优化上下文生成
+- 🛠️ **服务解耦**: Review模块通过ES Wiki Service Client调用Wiki检索服务
+- 📚 **文档完善**: 提供详细的混合检索、多智能体、AST解析等功能文档
+
 ### v2.0.0 (2025-08-06)
 - 🚀 **重大架构升级**: 从Spring异步改为Kafka消息队列架构
 - ⚡ **并发控制优化**: 实现基于信号量的精确并发限制（2个并发任务）
@@ -446,7 +542,6 @@ services:
 - 🛡️ **任务删除优化**: 修复删除任务后消息队列仍执行的问题
 - 📊 **队列监控**: 添加Kafka队列状态监控和AKHQ管理界面
 - 🔄 **重试机制**: 实现3次重试+死信队列的容错处理
-- 🧠 **记忆系统**: 完善Mem0集成，支持文档和代码自动索引
 - 🐳 **Docker支持**: 提供完整的Docker Compose部署方案
 
 ### v1.0.0 (2025-07-31)  
@@ -465,17 +560,22 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 感谢以下开源项目：
 - [Spring AI](https://spring.io/projects/spring-ai) - AI集成框架
 - [Apache Kafka](https://kafka.apache.org/) - 分布式消息队列
+- [Elasticsearch](https://www.elastic.co/) - 搜索和分析引擎
+- [Tree-sitter](https://tree-sitter.github.io/) - 代码解析库
+- [FastAPI](https://fastapi.tiangolo.com/) - 现代Python Web框架
 - [Ant Design](https://ant.design/) - React UI组件库  
 - [阿里云百炼](https://bailian.console.aliyun.com/) - AI模型服务
-- [Mem0](https://github.com/mem0ai/mem0) - 个人AI记忆系统
 
 ## 联系方式
 
 如有问题或建议，请：
-- 创建 [Issue](https://github.com/your-repo/issues)
+- 创建 [Issue]
 - 发送邮件至开发团队
 - 加入项目讨论群
 
 ---
 
 **CodeBase-CR** - 让代码分析变得智能化 🚀
+
+
+groke:

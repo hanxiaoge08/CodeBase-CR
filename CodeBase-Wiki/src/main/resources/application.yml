@@ -7,18 +7,33 @@ spring:
   # Spring AI 配置
   ai:
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY}
+      api-key: ${DASHSCOPE_API_KEY:your-key}
       chat:
         options:
           model: qwen3-coder-plus-2025-07-22
+      embedding:
+        options:
+          model: text-embedding-v4
     memory:
       redis:
-        host: localhost
-        port: 6379
-        password: 123456
-        timeout: 5000
+        host: ${REDIS_HOST:your-address}
+        port: ${REDIS_PORT:6379}
+        password: ${REDIS_PASSWORD:your-redis-password}
+        timeout: ${REDIS_TIMEOUT:5000}
   application:
     name: CodeBase-Wiki
+# Redis连接配置
+  data:
+    redis:
+      host: ${REDIS_HOST:your-address}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:your-redis-password}
+      timeout: ${REDIS_TIMEOUT:2000ms}
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
 
   datasource:
     url: jdbc:sqlite:data/codebasewiki_db.sqlite
@@ -37,7 +52,7 @@ spring:
       mode: always
       continue-on-error: true
   kafka:
-    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:your-address:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -45,7 +60,7 @@ spring:
       acks: 1
       batch-size: 16384
       linger-ms: 5
-    
+
     consumer:
       group-id: doc-generation-consumer-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -54,12 +69,12 @@ spring:
       enable-auto-commit: false
       max-poll-records: 10
       properties:
-        spring.json.trusted.packages: "com.hxg.queue.model"
+        spring.json.trusted.packages: "com.way.queue.model"
 
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
-  type-aliases-package: com.hxg.model.entity
+  type-aliases-package: com.way.model.entity
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -74,9 +89,9 @@ logging:
   level:
     root: INFO
     # Tool调用监控日志
-    com.hxg.monitor: INFO
-    com.hxg.llm.tool: DEBUG
-    com.hxg.llm.service: INFO
+    com.way.monitor: INFO
+    com.way.llm.tool: DEBUG
+    com.way.llm.service: INFO
   org:
     springframework:
       boot: error
@@ -85,10 +100,21 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# Memory服务配置
-memory:
-  service:
-    url: http://localhost:8080
+# Elasticsearch配置
+elasticsearch:
+  uris: ${ELASTICSEARCH_URIS:http://your-address:9200}
+  username: ${ELASTICSEARCH_USERNAME:elastic}
+  password: ${ELASTICSEARCH_PASSWORD:your-elasticsearch-password}
+  connection-timeout: 5000
+  socket-timeout: 60000
+  # 索引配置
+  indices:
+    code-chunks: "code_chunks_index"
+    documents: "documents_index"
+  # 代码解析服务配置
+  code-parser:
+    url: ${CODE_PARSER_URL:http://your-address:8566}
+    timeout: 30000
 
 # Feign配置
 feign:
@@ -103,27 +129,53 @@ feign:
   circuitbreaker:
     enabled: false
 
+# 通知配置
+notification:
+  # 是否启用通知功能
+  enabled: true
+  # 启用的通知渠道
+  channels:
+    - feishu
+    - dingtalk
+  
+  # 飞书配置
+  feishu:
+    enabled: ${FEISHU_ENABLED:true}
+    # Wiki文档机器人
+    wiki-webhook: ${FEISHU_WIKI_WEBHOOK:your-feishu-wiki-webhook}
+    wiki-secret: ${FEISHU_WIKI_SECRET:your-feishu-wiki-secret}
+    # 代码评审机器人
+    review-webhook: ${FEISHU_REVIEW_WEBHOOK:your-feishu-review-webhook}
+    review-secret: ${FEISHU_REVIEW_SECRET:your-feishu-review-secret}
+  
+  # 钉钉配置
+  dingtalk:
+    enabled: ${DINGTALK_ENABLED:true}
+    # Wiki文档机器人
+    wiki-webhook: ${DINGTALK_WIKI_WEBHOOK:your-dingtalk-wiki-webhook}
+    wiki-secret: ${DINGTALK_WIKI_SECRET:your-dingtalk-wiki-secret}
+    # 代码评审机器人
+    review-webhook: ${DINGTALK_REVIEW_WEBHOOK:your-dingtalk-review-webhook}
+    review-secret: ${DINGTALK_REVIEW_SECRET:your-dingtalk-review-secret}
+
 # 项目配置
 project:
   repository:
     # Git仓库克隆根目录
-    base-path: ${PROJECT_REPO_PATH:C:\Code\repository}
+    base-path: ${GIT_REPOSITORY_BASE_PATH:D:\Code\repository}
   # Wiki文档生成配置
   wiki:
     prompt:
       # 目录生成prompt版本 (v1, v2, v3, v4, v5) - v5为优化版本，减少文档碎片化
-      catalogue-version: ${WIKI_CATALOGUE_PROMPT_VERSION:v5}
+      catalogue-version: v5
       # 文档生成prompt版本 (v1, v2, v3, v4) - v4为精简版本，基于dependent_files优化
-      doc-version: ${WIKI_DOC_PROMPT_VERSION:v4}
+      doc-version: v4
     # Kafka消息队列配置
     kafka:
       topics:
         doc-generation: "doc-generation-topic"
         doc-retry: "doc-generation-retry-topic"
         doc-dlq: "doc-generation-dlq"
-        mem-index: "memory-index-topic"
-        mem-retry: "memory-index-retry-topic"
-        mem-dlq: "memory-index-dlq"
       consumer:
         # 最大并发消费者数量
         max-concurrency: 2
@@ -136,7 +188,7 @@ project:
     # 监控配置
     monitor:
       # 启用Tool Calling监控
-      tool-calling: ${WIKI_MONITOR_TOOL_CALLING:true}
+      tool-calling: true
       # 记录详细的Tool调用信息
-      tool-details: ${WIKI_MONITOR_TOOL_DETAILS:true}
+      tool-details: true
 

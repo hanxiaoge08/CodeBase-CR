@@ -1,0 +1,369 @@
+package com.way.queue.service;
+
+import com.alibaba.fastjson2.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.way.llm.prompt.GenDocPrompt;
+import com.way.llm.service.LlmService;
+import com.way.llm.tool.FileSystemTool;
+import com.way.model.mapper.CatalogueMapper;
+import com.way.model.mapper.TaskMapper;
+import com.way.model.entity.Catalogue;
+import com.way.model.entity.Task;
+import com.way.model.enums.CatalogueStatusEnum;
+import com.way.queue.model.DocumentGenerationTask;
+import com.way.service.IESIntegrationService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * @author way
+ * @description: 文档处理服务
+ * @date 2025/8/5
+ */
+@Service
+@Slf4j
+public class DocumentProcessingService {
+    
+    private final LlmService llmService;
+    private final CatalogueMapper catalogueMapper;
+    private final TaskMapper taskMapper;
+    private final IESIntegrationService memoryIntegrationService;
+    
+    @Value("${project.wiki.prompt.doc-version}")
+    private String docPromptVersion;
+    
+    // 用于记录已经索引代码文件的任务，防止重复索引
+    private static final Set<String> codeFilesIndexedTasks = ConcurrentHashMap.newKeySet();
+    
+    public DocumentProcessingService(LlmService llmService, 
+                                   CatalogueMapper catalogueMapper,
+                                   TaskMapper taskMapper,
+                                   IESIntegrationService memoryIntegrationService) {
+        this.llmService = llmService;
+        this.catalogueMapper = catalogueMapper;
+        this.taskMapper = taskMapper;
+        this.memoryIntegrationService = memoryIntegrationService;
+        log.info("DocumentProcessingService initialized with docPromptVersion: {}", docPromptVersion);
+    }
+    
+    /**
+     * 处理文档生成任务
+     * @param task 文档生成任务
+     */
+    @Transactional
+    public void processTask(DocumentGenerationTask task) {
+        String taskId = task.getTaskId();
+        String catalogueName = task.getCatalogueName();
+        
+        log.info("开始处理文档生成任务: taskId={}, catalogueName={}, retryCount={}", 
+                taskId, catalogueName, task.getRetryCount());
+        
+        // 1. 首先检查任务是否还存在
+        Task existingTask = getTaskById(taskId);
+        if (existingTask == null) {
+            log.warn("任务已被删除，跳过处理: taskId={}, catalogueName={}", taskId, catalogueName);
+            throw new TaskDeletedException("任务已被删除: " + taskId);
+        }
+        
+        // 2. 检查目录记录是否存在
+        Catalogue existingCatalogue = catalogueMapper.selectOne(
+            new LambdaQueryWrapper<Catalogue>()
+                .eq(Catalogue::getCatalogueId, task.getCatalogueId())
+        );
+        
+        if (existingCatalogue == null) {
+            log.warn("目录记录已被删除，跳过处理: taskId={}, catalogueId={}", taskId, task.getCatalogueId());
+            throw new TaskDeletedException("目录记录已被删除: " + task.getCatalogueId());
+        }
+        
+        // 先清理可能存在的旧ThreadLocal值
+        FileSystemTool.clearProjectRoot();
+        
+        // 设置项目根路径到 ThreadLocal，供 FileSystemTool 使用
+        FileSystemTool.setProjectRoot(task.getLocalPath());
+        log.debug("为任务 {} 设置项目根路径: {}", taskId, task.getLocalPath());
+        
+        try {
+            // 获取对应版本的prompt模板
+            String prompt = getPromptByVersion(docPromptVersion);
+            if (prompt == null) {
+                throw new RuntimeException("未找到对应版本的prompt模板: " + docPromptVersion);
+            }
+            
+            // 构建完整的prompt
+            prompt = buildPrompt(prompt, task);
+            
+            // 记录token消耗监控信息
+            logTokenUsageInfo(prompt, task);
+            
+            log.info("开始生成目录详情，使用prompt版本: {}, catalogueName: {}, promptLength: {}", 
+                    docPromptVersion, catalogueName, prompt.length());
+            
+            // 调用LLM服务生成内容
+            String result = llmService.callWithTools(prompt);
+            
+            if (!StringUtils.hasText(result)) {
+                throw new RuntimeException("LLM生成目录详情结果为空");
+            }
+            
+            log.info("LLM生成完成: taskId={}, catalogueName={}, resultLength={}", 
+                    taskId, catalogueName, result.length());
+            
+            // 更新数据库状态为完成
+            updateCatalogueStatus(task.getCatalogueId(), result, 
+                    CatalogueStatusEnum.COMPLETED.getCode(), null);
+
+            //异步索引写到es里面
+            indexToESSystemAsync(task, result);
+
+            
+            log.info("文档生成任务处理完成: taskId={}, catalogueName={}", taskId, catalogueName);
+            
+        } catch (TaskDeletedException e) {
+            // 任务已删除异常，直接重新抛出，不需要更新状态
+            throw e;
+        } catch (Exception e) {
+            log.error("处理文档生成任务失败: taskId={}, catalogueName={}, error={}", 
+                    taskId, catalogueName, e.getMessage(), e);
+            
+            // 更新数据库状态为失败
+            updateCatalogueStatus(task.getCatalogueId(), null, 
+                    CatalogueStatusEnum.FAILED.getCode(), e.getMessage());
+            
+            // 重新抛出异常，让消费者处理重试逻辑
+            throw new RuntimeException("文档生成失败: " + e.getMessage(), e);
+        } finally {
+            // 确保清理 ThreadLocal，避免内存泄漏和状态污染
+            try {
+                FileSystemTool.clearProjectRoot();
+                log.debug("任务 {} 完成，已清理ThreadLocal", taskId);
+            } catch (Exception cleanupError) {
+                log.warn("清理ThreadLocal时发生异常: taskId={}, error={}", taskId, cleanupError.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 根据版本获取prompt模板
+     */
+    private String getPromptByVersion(String version) {
+        return switch (version) {
+            case "v1" -> GenDocPrompt.promptV1;
+            case "v2" -> GenDocPrompt.promptV2;
+            case "v3" -> GenDocPrompt.promptV3;
+            case "v4" -> GenDocPrompt.promptV4;
+            default -> {
+                log.warn("未知的prompt版本: {}, 使用默认版本v4", version);
+                yield GenDocPrompt.promptV4;
+            }
+        };
+    }
+    
+    /**
+     * 构建完整的prompt
+     */
+    private String buildPrompt(String template, DocumentGenerationTask task) {
+        // 对于v4版本的prompt，使用dependent_files而不是完整的fileTree
+        if ("v4".equals(docPromptVersion)) {
+            // 从任务中获取dependent_files信息
+            String dependentFiles = getDependentFilesString(task);
+            
+            return template
+                    .replace("{{repository_location}}", task.getLocalPath())
+                    .replace("{{prompt}}", task.getPrompt())
+                    .replace("{{title}}", task.getCatalogueName())
+                    .replace("{{dependent_files}}", dependentFiles);
+        } else {
+            // 传统版本使用完整数据
+            return template
+                    .replace("{{repository_location}}", task.getLocalPath())
+                    .replace("{{prompt}}", task.getPrompt())
+                    .replace("{{title}}", task.getCatalogueName())
+                    .replace("{{repository_files}}", task.getFileTree() != null ? task.getFileTree() : "")
+                    .replace("{{catalogue}}", JSON.toJSONString(task.getCatalogueStruct()));
+        }
+    }
+    
+    /**
+     * 从目录记录中获取dependent_files字符串
+     */
+    private String getDependentFilesString(DocumentGenerationTask task) {
+        try {
+            // 查询当前目录记录
+            Catalogue catalogue = catalogueMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Catalogue>()
+                    .eq(Catalogue::getCatalogueId, task.getCatalogueId())
+            );
+            
+            if (catalogue != null && StringUtils.hasText(catalogue.getDependentFile())) {
+                // 解析dependent_file JSON数组并格式化
+                try {
+                    List<String> files = JSON.parseArray(catalogue.getDependentFile(), String.class);
+                    return String.join(", ", files);
+                } catch (Exception e) {
+                    log.warn("解析dependent_file失败: {}", e.getMessage());
+                    return catalogue.getDependentFile();
+                }
+            }
+            
+            return "无特定依赖文件";
+            
+        } catch (Exception e) {
+            log.error("获取dependent_files失败: {}", e.getMessage());
+            return "获取文件信息失败";
+        }
+    }
+    
+    /**
+     * 记录Token使用监控信息
+     */
+    private void logTokenUsageInfo(String prompt, DocumentGenerationTask task) {
+        try {
+            int promptLength = prompt.length();
+            // 估算token数量（粗略估算：4个字符≈1个token）
+            int estimatedTokens = promptLength / 4;
+            
+            // 统计优化情况
+            boolean isOptimized = "v4".equals(docPromptVersion);
+            String optimizationType = isOptimized ? "优化版本(基于dependent_files)" : "传统版本(完整数据)";
+            
+            log.info("📊 Token使用监控 - taskId: {}, catalogueName: {}, " +
+                    "promptVersion: {}, optimizationType: {}, " +
+                    "promptLength: {}, estimatedTokens: {}", 
+                    task.getTaskId(), task.getCatalogueName(), 
+                    docPromptVersion, optimizationType,
+                    promptLength, estimatedTokens);
+            
+            // 如果是优化版本，记录节省的估算
+            if (isOptimized) {
+                String dependentFiles = getDependentFilesString(task);
+                log.info("🎯 Token优化详情 - dependentFiles: {}, " +
+                        "预计相比传统版本节省70-80%的token消耗", 
+                        dependentFiles);
+            }
+            
+        } catch (Exception e) {
+            log.warn("记录Token监控信息失败: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * 更新目录状态
+     */
+    private void updateCatalogueStatus(String catalogueId, String content, Integer status, String failReason) {
+        try {
+            // 查询现有记录
+            Catalogue existingCatalogue = catalogueMapper.selectOne(
+                new LambdaQueryWrapper<Catalogue>()
+                    .eq(Catalogue::getCatalogueId, catalogueId)
+            );
+            
+            if (existingCatalogue == null) {
+                log.error("无法找到要更新的目录记录: catalogueId={}", catalogueId);
+                return;
+            }
+            
+            // 更新记录内容和状态
+            existingCatalogue.setContent(content);
+            existingCatalogue.setStatus(status);
+            existingCatalogue.setFailReason(failReason);
+            existingCatalogue.setUpdateTime(LocalDateTime.now());
+            
+            int updated = catalogueMapper.updateById(existingCatalogue);
+            if (updated > 0) {
+                log.info("目录状态更新成功: catalogueId={}, status={}", catalogueId, status);
+            } else {
+                log.warn("目录状态更新失败: catalogueId={}, status={}", catalogueId, status);
+            }
+            
+        } catch (Exception e) {
+            log.error("更新目录状态失败: catalogueId={}, status={}, error={}", 
+                    catalogueId, status, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 异步索引到ES搜索引擎
+     */
+    private void indexToESSystemAsync(DocumentGenerationTask task, String content) {
+        try {
+            // 构建Catalogue对象用于索引
+            Catalogue catalogue = new Catalogue();
+            catalogue.setTaskId(task.getTaskId());
+            catalogue.setCatalogueId(task.getCatalogueId());
+            catalogue.setName(task.getCatalogueName());
+            catalogue.setContent(content);
+            catalogue.setStatus(CatalogueStatusEnum.COMPLETED.getCode());
+
+            // 使用projectName作为repositoryId，如果没有则使用taskId
+            String repositoryId = task.getProjectName() != null ? task.getProjectName() : task.getTaskId();
+            // 设置repoId字段
+            catalogue.setRepoId(repositoryId);
+
+            log.debug("开始索引文档到ES: repositoryId={}, catalogueName={}", repositoryId, task.getCatalogueName());
+
+            // 异步索引文档到ES
+            memoryIntegrationService.indexDocumentToESAsync(repositoryId, catalogue)
+                    .whenComplete((result, throwable) -> {
+                        if (throwable != null) {
+                            log.warn("索引文档到ES失败: repositoryId={}, catalogueName={}, error={}",
+                                    repositoryId, task.getCatalogueName(), throwable.getMessage());
+                        } else {
+                            log.debug("成功索引文档到ES: repositoryId={}, catalogueName={}", 
+                                    repositoryId, task.getCatalogueName());
+                        }
+                    });
+
+            // 索引代码文件（每个任务只索引一次）
+            if (!codeFilesIndexedTasks.contains(task.getTaskId())) {
+                codeFilesIndexedTasks.add(task.getTaskId());
+                memoryIntegrationService.indexCodeFilesToESAsync(repositoryId, task.getTaskId(), task.getLocalPath())
+                        .whenComplete((result, throwable) -> {
+                            if (throwable != null) {
+                                log.warn("索引代码文件到ES失败: repositoryId={}, error={}",
+                                        repositoryId, throwable.getMessage());
+                            } else {
+                                log.debug("成功索引代码文件到ES: repositoryId={}", repositoryId);
+                            }
+                        });
+            }
+
+        } catch (Exception e) {
+            log.error("索引到ES系统失败: taskId={}, catalogueName={}, error={}",
+                    task.getTaskId(), task.getCatalogueName(), e.getMessage(), e);
+        }
+    }
+
+
+    /**
+     * 根据taskId查询任务
+     */
+    private Task getTaskById(String taskId) {
+        try {
+            return taskMapper.selectOne(
+                new LambdaQueryWrapper<Task>()
+                    .eq(Task::getTaskId, taskId)
+            );
+        } catch (Exception e) {
+            log.error("查询任务失败: taskId={}, error={}", taskId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 任务已删除异常
+     */
+    public static class TaskDeletedException extends RuntimeException {
+        public TaskDeletedException(String message) {
+            super(message);
+        }
+    }
+}

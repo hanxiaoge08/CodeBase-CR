@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>com.hxg</groupId>
-        <artifactId>CodeBase-CR</artifactId>
+        <groupId>com.way</groupId>
+        <artifactId>CR</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
@@ -75,16 +75,6 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- 
-        Memory Module依赖已移除，现在通过Feign HTTP调用
-        <dependency>
-            <groupId>com.hxg</groupId>
-            <artifactId>CodeBase-Memory</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
-            <scope>compile</scope>
-        </dependency>
-        -->
-
         <!-- Test Dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -98,8 +88,9 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
                 <configuration>
-                    <mainClass>com.hxg.crApp.AiCodeReviewerApplication</mainClass>
+                    <mainClass>com.way.crApp.AiCodeReviewerApplication</mainClass>
                 </configuration>
                 <executions>
                     <execution>

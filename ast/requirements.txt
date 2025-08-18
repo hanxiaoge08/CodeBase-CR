@@ -1,0 +1,10 @@
+# --- Web ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# --- Data Models ---
+pydantic==2.8.2
+
+# --- Tree-sitter (no distutils needed on Py3.12) ---
+tree_sitter==0.21.1
+tree_sitter_languages==1.10.2

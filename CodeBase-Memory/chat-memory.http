@@ -1,9 +1,0 @@
-# Chat Memory API
-
-### 测试client
-GET http://localhost:8080/advisor/memory/mem0/test
-
-### add memory
-GET http://localhost:8080/advisor/memory/mem0/call?message=你好，我是万能的喵。我爱玩魔兽世界&user_id=miao
-### query memory
-GET http://localhost:8080//advisor/memory/mem0/messages?query=魔兽世界&user_id=miao

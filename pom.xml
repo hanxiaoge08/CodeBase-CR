@@ -6,15 +6,14 @@
     <packaging>pom</packaging>
 
 
-    <groupId>com.hxg</groupId>
-    <artifactId>CodeBase-CR</artifactId>
+    <groupId>com.way</groupId>
+    <artifactId>CR</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>CodeBase-CR</name>
     <description>AI-Based Code Review Tool</description>
     <modules>
         <module>CodeBase-Review</module>
         <module>CodeBase-Wiki</module>
-        <module>CodeBase-Memory</module>
     </modules>
 
 

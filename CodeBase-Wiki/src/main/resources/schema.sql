@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS task (
 CREATE TABLE IF NOT EXISTS catalogue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT,
+  repo_id TEXT,
   catalogue_id TEXT,
   parent_catalogue_id TEXT,
   name TEXT,
