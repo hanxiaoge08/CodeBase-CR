@@ -7,8 +7,40 @@ spring:
   
   # Spring AI 配置
   ai:
+    # 模型提供商选择: dashscope（阿里云，默认）| ollama（本地模型）| openai（OpenAI）
+    provider: ${SPRING_AI_PROVIDER:dashscope}
+    
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:your-dashscope-api-key}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3-coder-plus}
+      embedding:
+        options:
+          model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v4}
+    
+    # Ollama 配置（本地大模型）
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_CHAT_MODEL:qwen2.5-coder:14b}
+          temperature: 0.7
+      embedding:
+        options:
+          model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+    
+    # OpenAI 配置
+    openai:
+      api-key: ${OPENAI_API_KEY:your-openai-api-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${OPENAI_CHAT_MODEL:gpt-4o}
+          temperature: 0.7
+      embedding:
+        options:
+          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
   datasource:
     url: jdbc:sqlite:data/codebasewiki_db.sqlite
     driver-class-name: org.sqlite.JDBC
@@ -87,5 +119,7 @@ logging:
     name: ./logs/codebasereview.log
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+
 
 

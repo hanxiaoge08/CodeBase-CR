@@ -15,6 +15,7 @@
 export DASHSCOPE_API_KEY=sk-xxx        # 阿里云百炼API密钥
 export GITHUB_TOKEN=ghp_xxx            # GitHub访问令牌
 export GITHUB_WEBHOOK_SECRET=xxx       # Webhook密钥（可选）
+
 ```
 
 2. **启动应用**

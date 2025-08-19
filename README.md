@@ -61,14 +61,34 @@
 
 **重要提醒**: 项目已将敏感配置信息迁移到环境变量，请参考完整的[环境变量配置文档](ENVIRONMENT_VARIABLES.md)进行配置。
 
+**🔥 新功能**: 现已支持三种大语言模型提供商：
+- **阿里云DashScope**（默认）：中文优化，价格合理
+- **本地Ollama**：完全免费，数据私有  
+- **OpenAI**：效果顶级，API稳定
+
+详细配置请参考[多大模型支持文档](MULTI_LLM_SUPPORT.md)。
+
 #### 快速配置
 ```bash
 # 1. 复制环境变量模板
 cp environment-template.env .env
 
 # 2. 编辑 .env 文件，设置必需的环境变量
-# 必需配置项：
+# 🔥 新功能：多大模型支持
+export SPRING_AI_PROVIDER=dashscope                 # 大模型提供商: dashscope(默认) | ollama(本地) | openai
+
+# 阿里云DashScope配置（使用云端模型时必需）
 export DASHSCOPE_API_KEY=your-dashscope-api-key     # 阿里云大模型API密钥
+
+# 本地Ollama配置（使用本地模型时必需）
+export OLLAMA_BASE_URL=http://localhost:11434       # Ollama服务地址
+export OLLAMA_CHAT_MODEL=qwen2.5-coder:14b          # 推荐的代码专用模型
+
+# OpenAI配置（使用OpenAI模型时必需）
+export OPENAI_API_KEY=sk-your-openai-api-key        # OpenAI API密钥
+export OPENAI_CHAT_MODEL=gpt-4o                     # 推荐的OpenAI模型
+
+# GitHub集成配置
 export GITHUB_TOKEN=your-github-token               # GitHub访问令牌
 export GITHUB_WEBHOOK_SECRET=your-webhook-secret    # GitHub Webhook密钥
 
@@ -576,6 +596,3 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 ---
 
 **CodeBase-CR** - 让代码分析变得智能化 🚀
-
-
-groke:
