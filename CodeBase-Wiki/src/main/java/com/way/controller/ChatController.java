@@ -1,10 +1,14 @@
 package com.way.controller;
 
+
 import com.way.llm.service.LlmService;
 import com.way.model.dto.*;
+
 import com.way.model.vo.ResultVo;
 import com.way.service.CodeReviewESService;
+
 import com.way.service.RAGService;
+import com.way.service.ChatMemoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,14 +29,26 @@ class ChatController {
     @Autowired
     CodeReviewESService codeReviewESService;
 
+    /**
+     * 聊天对话接口
+     * 
+     * @param query 用户查询内容
+     * @param taskId 任务ID，用于聊天记忆隔离（可选）
+     * @param useRAG 是否使用RAG增强（默认true）
+     * @param topK 检索TopK数量（可选）
+     * @param userId 用户ID，用于聊天记忆隔离（可选）
+     *               注意：前端无需传递此参数，后端使用固定用户ID
+     *               实现方式：所有用户共享相同的聊天记忆（default_user）
+     */
     @GetMapping(value="/call", produces = "application/json;charset=UTF-8")
     public ResultVo<ChatResponseDTO> callChat(@RequestParam(value = "query", defaultValue = "你好，很高兴认识你，能简单介绍一下自己吗？") String query,
                                              @RequestParam(value = "taskId", required = false) String taskId,
                                              @RequestParam(value = "useRAG", defaultValue = "true") boolean useRAG,
-                                             @RequestParam(value = "topK", required = false) Integer topK) {
+                                             @RequestParam(value = "topK", required = false) Integer topK,
+                                             @RequestParam(value = "userId", required = false) String userId) {
         
         try {
-            ChatResponseDTO response = ragService.processChat(query, taskId, useRAG, topK);
+            ChatResponseDTO response = ragService.processChat(query, taskId, useRAG, topK, userId);
             return ResultVo.success(response);
             
         } catch (Exception e) {

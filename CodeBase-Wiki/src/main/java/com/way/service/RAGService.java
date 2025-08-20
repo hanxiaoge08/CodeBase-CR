@@ -7,12 +7,17 @@ import com.way.model.dto.SearchResultDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
+
+
 
 /**
  * RAG (Retrieval-Augmented Generation) 服务
@@ -31,6 +36,11 @@ public class RAGService {
     private final ToolCallback[] allTools;
     private final EnhancedHybridSearchService enhancedHybridSearchService;
     private final RAGContextBuilder ragContextBuilder;
+    
+
+    
+    @Autowired
+    private ChatMemoryService chatMemoryService;
 
     @Autowired
     public RAGService(ChatClient.Builder chatClientBuilder,
@@ -52,105 +62,61 @@ public class RAGService {
      * @return 对话响应
      */
     public ChatResponseDTO processChat(String query, String taskId, boolean useRAG, Integer topK) {
-        logger.info("处理RAG对话: query={}, taskId={}, useRAG={}, topK={}", query, taskId, useRAG, topK);
-        
-        try {
+        return processChat(query, taskId, useRAG, topK, null);
+    }
+    
+    /**
+     * 处理基于RAG的对话（完整参数版本）
+     * @param query 用户查询
+     * @param taskId 任务ID（可选）
+     * @param useRAG 是否使用RAG
+     * @param topK TopK数量
+     * @param userId 用户ID（可选，用于记忆隔离）
+     * @return 对话响应
+     */
+    public ChatResponseDTO processChat(String query, String taskId, boolean useRAG, Integer topK, String userId) {
+        return executeWithTimedErrorHandling("RAG对话", query, () -> {
             ChatResponseDTO response = new ChatResponseDTO();
             response.setQuery(query);
             response.setUseRAG(useRAG);
             
+            // 获取有效用户ID和聊天记忆
+            String effectiveUserId = StringUtils.hasText(userId) ? userId : getUserIdFromRequest();
+            ChatMemoryContext memoryContext = buildChatMemoryContext(taskId, effectiveUserId);
+            
+            // 生成AI回答
+            String aiResponse;
             if (!useRAG) {
-                // 不使用RAG，直接调用原始chat
-                String aiResponse = chatClientBuilder
-                        .defaultOptions(ToolCallingChatOptions.builder()
-                                .toolCallbacks(allTools)
-                                .build())
-                        .build()
-                        .prompt(query)
-                        .call()
-                        .content();
-                
+                aiResponse = processNonRAGChat(query, memoryContext);
                 response.setResponse(aiResponse);
                 response.setHasContext(false);
                 response.setContextCount(0);
-                
             } else {
-                // 使用RAG增强的对话
-                int k = topK != null ? topK : DEFAULT_TOP_K;
-                RAGContextBuilder.RAGContext ragContext = ragContextBuilder.buildContext(query, taskId, k, DEFAULT_CONTEXT_LENGTH);
-                
-                if (!ragContext.hasContext()) {
-                    // 如果没有找到相关上下文，回退到普通对话
-                    String aiResponse = chatClientBuilder
-                            .defaultOptions(ToolCallingChatOptions.builder()
-                                    .toolCallbacks(allTools)
-                                    .build())
-                            .build()
-                            .prompt("没有找到相关的代码或文档信息，请基于常识回答：" + query)
-                            .call()
-                            .content();
-                    
-                    response.setResponse(aiResponse);
-                    response.setHasContext(false);
-                    response.setContextCount(0);
-                    
-                } else {
-                    // 使用RAG增强的prompt调用大模型
-                    String aiResponse = chatClientBuilder
-                            .build()
-                            .prompt(ragContext.getEnhancedPrompt())
-                            .call()
-                            .content();
-                    
-                    // 添加检索结果信息
-                    if (ragContext.getResultCount() > 0) {
-                        aiResponse += String.format("\n\n---\n💡 基于 %d 个相关代码片段和文档生成此回答", ragContext.getResultCount());
-                    }
-                    
-                    response.setResponse(aiResponse);
-                    response.setHasContext(true);
-                    response.setContextCount(ragContext.getResultCount());
-                }
+                ChatResult chatResult = processRAGChat(query, taskId, topK, memoryContext);
+                response.setResponse(chatResult.response);
+                response.setHasContext(chatResult.hasContext);
+                response.setContextCount(chatResult.contextCount);
+                aiResponse = chatResult.response;
             }
             
-            logger.info("RAG对话处理完成: hasContext={}, contextCount={}", response.getHasContext(), response.getContextCount());
+            // 保存对话记录
+            saveChatConversation(taskId, effectiveUserId, query, aiResponse);
             return response;
-            
-        } catch (Exception e) {
-            logger.error("RAG对话处理失败: query={}, error={}", query, e.getMessage(), e);
-            throw new RuntimeException("对话处理失败：" + e.getMessage(), e);
-        }
+        });
     }
 
     /**
      * 处理RAG检索并生成回答
-     * @param query 用户查询
-     * @param taskId 任务ID（可选）
-     * @param topK TopK数量
-     * @return RAG检索响应
      */
     public RAGSearchResponseDTO processSearchWithRAG(String query, String taskId, Integer topK) {
-        logger.info("处理RAG检索: query={}, taskId={}, topK={}", query, taskId, topK);
-        
-        try {
+        return executeWithErrorHandling("RAG检索", () -> {
             int k = topK != null ? topK : DEFAULT_TOP_K;
-            
-            // 执行增强混合检索
             List<SearchResultDTO> searchResults = enhancedHybridSearchService.hybridSearch(query, taskId, k);
-            
-            // 构建RAG上下文并生成回答
             RAGContextBuilder.RAGContext ragContext = ragContextBuilder.buildContext(query, taskId, k, DEFAULT_CONTEXT_LENGTH);
             
-            String aiResponse = "";
-            if (ragContext.hasContext()) {
-                aiResponse = chatClientBuilder
-                        .build()
-                        .prompt(ragContext.getEnhancedPrompt())
-                        .call()
-                        .content();
-            } else {
-                aiResponse = "抱歉，没有找到相关的代码或文档信息来回答您的问题。";
-            }
+            String aiResponse = ragContext.hasContext() 
+                ? callChatClient(ragContext.getEnhancedPrompt(), false)
+                : "抱歉，没有找到相关的代码或文档信息来回答您的问题。";
             
             RAGSearchResponseDTO response = new RAGSearchResponseDTO();
             response.setQuery(query);
@@ -161,26 +127,15 @@ public class RAGService {
             
             logger.info("RAG检索处理完成: 检索结果{}个, hasContext={}", searchResults.size(), ragContext.hasContext());
             return response;
-            
-        } catch (Exception e) {
-            logger.error("RAG检索处理失败: query={}, error={}", query, e.getMessage(), e);
-            throw new RuntimeException("检索过程中发生错误：" + e.getMessage(), e);
-        }
+        });
     }
 
     /**
      * 处理纯检索（不生成AI回答）
-     * @param query 用户查询
-     * @param taskId 任务ID（可选）
-     * @param topK TopK数量
-     * @return 纯检索响应
      */
     public SearchOnlyResponseDTO processSearchOnly(String query, String taskId, Integer topK) {
-        logger.info("处理纯检索: query={}, taskId={}, topK={}", query, taskId, topK);
-        
-        try {
+        return executeWithErrorHandling("纯检索", () -> {
             int k = topK != null ? topK : DEFAULT_TOP_K;
-            
             List<SearchResultDTO> searchResults = enhancedHybridSearchService.hybridSearch(query, taskId, k);
             
             SearchOnlyResponseDTO response = new SearchOnlyResponseDTO();
@@ -190,11 +145,7 @@ public class RAGService {
             
             logger.info("纯检索处理完成: 返回{}个结果", searchResults.size());
             return response;
-            
-        } catch (Exception e) {
-            logger.error("纯检索处理失败: query={}, error={}", query, e.getMessage(), e);
-            throw new RuntimeException("检索过程中发生错误：" + e.getMessage(), e);
-        }
+        });
     }
 
     /**
@@ -226,6 +177,221 @@ public class RAGService {
         } catch (Exception e) {
             logger.debug("RAG服务不可用: {}", e.getMessage());
             return false;
+        }
+    }
+    
+
+    
+
+    
+
+    
+    /**
+     * 获取固定的用户ID
+     * 简化实现：所有用户共享同一个固定ID
+     * @return 固定的用户ID
+     */
+    private String getUserIdFromRequest() {
+        // 写死一个固定的用户ID，所有请求共享
+        return "default_user";
+    }
+    
+    // ==================== 通用辅助方法 ====================
+    
+
+    
+    /**
+     * 带错误处理的通用执行模板
+     */
+    private <T> T executeWithErrorHandling(String operation, SearchOperation<T> operation_func) {
+        logger.info("处理{}: query={}", operation, "...");
+        try {
+            return operation_func.execute();
+        } catch (Exception e) {
+            logger.error("{}处理失败: error={}", operation, e.getMessage(), e);
+            throw new RuntimeException(operation + "过程中发生错误：" + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 带时间记录和错误处理的执行模板
+     */
+    private <T> T executeWithTimedErrorHandling(String operation, String query, SearchOperation<T> operation_func) {
+        long startTime = System.currentTimeMillis();
+        logger.info("处理{}: query={}", operation, query);
+        
+        try {
+            T result = operation_func.execute();
+            long responseTime = System.currentTimeMillis() - startTime;
+            
+            if (result instanceof ChatResponseDTO) {
+                ChatResponseDTO response = (ChatResponseDTO) result;
+                logger.info("{}处理完成: hasContext={}, contextCount={}, responseTime={}ms", 
+                           operation, response.getHasContext(), response.getContextCount(), responseTime);
+            }
+            
+            return result;
+        } catch (Exception e) {
+            logger.error("{}处理失败: query={}, error={}", operation, query, e.getMessage(), e);
+            throw new RuntimeException("对话处理失败：" + e.getMessage(), e);
+        }
+    }
+    
+
+    
+    /**
+     * 构建聊天记忆上下文
+     */
+    private ChatMemoryContext buildChatMemoryContext(String taskId, String effectiveUserId) {
+        if (!StringUtils.hasText(taskId)) {
+            return new ChatMemoryContext(null, null);
+        }
+        
+        ChatMemory taskChatMemory = chatMemoryService.getChatMemory(taskId, effectiveUserId);
+        String conversationId = generateConversationId(taskId, effectiveUserId);
+        List<Message> historyMessages = taskChatMemory.get(conversationId);
+        
+        logger.info("获取用户{}在任务{}的聊天记忆，历史消息数量: {}", effectiveUserId, taskId, historyMessages.size());
+        return new ChatMemoryContext(taskChatMemory, conversationId);
+    }
+    
+    /**
+     * 构建历史对话上下文字符串
+     */
+    private String buildHistoryContext(ChatMemoryContext memoryContext, String basePrompt) {
+        if (memoryContext.chatMemory == null || memoryContext.conversationId == null) {
+            return basePrompt;
+        }
+        
+        List<Message> historyMessages = memoryContext.chatMemory.get(memoryContext.conversationId);
+        if (historyMessages.isEmpty()) {
+            return basePrompt;
+        }
+        
+        StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append("以下是历史对话记录：\n");
+        for (Message msg : historyMessages) {
+            String role = "user".equals(msg.getMessageType().getValue()) ? "用户" : "助手";
+            String content = msg.toString();
+            contextBuilder.append(role).append(": ").append(content).append("\n");
+        }
+        contextBuilder.append("\n").append(basePrompt);
+        return contextBuilder.toString();
+    }
+    
+    /**
+     * 调用ChatClient获取AI回复
+     */
+    private String callChatClient(String prompt, boolean withTools) {
+        ChatClient.Builder builder = chatClientBuilder;
+        if (withTools) {
+            builder = builder.defaultOptions(ToolCallingChatOptions.builder()
+                    .toolCallbacks(allTools)
+                    .build());
+        }
+        return builder.build().prompt(prompt).call().content();
+    }
+    
+    /**
+     * 处理非RAG聊天
+     */
+    private String processNonRAGChat(String query, ChatMemoryContext memoryContext) {
+        String contextPrompt = buildHistoryContext(memoryContext, "当前问题: " + query);
+        return callChatClient(contextPrompt, true);
+    }
+    
+    /**
+     * 处理RAG聊天
+     */
+    private ChatResult processRAGChat(String query, String taskId, Integer topK, ChatMemoryContext memoryContext) {
+        int k = topK != null ? topK : DEFAULT_TOP_K;
+        RAGContextBuilder.RAGContext ragContext = ragContextBuilder.buildContext(query, taskId, k, DEFAULT_CONTEXT_LENGTH);
+        
+        if (!ragContext.hasContext()) {
+            // 没有RAG上下文，回退到记忆对话
+            String basePrompt = "没有找到相关的代码或文档信息，请基于对话历史和常识回答：" + query;
+            String contextPrompt = buildHistoryContext(memoryContext, basePrompt);
+            String response = callChatClient(contextPrompt, true);
+            return new ChatResult(response, false, 0);
+        } else {
+            // 有RAG上下文，整合记忆
+            String enhancedPrompt = buildHistoryContext(memoryContext, ragContext.getEnhancedPrompt());
+            String response = callChatClient(enhancedPrompt, false);
+            
+            // 添加检索结果信息
+            if (ragContext.getResultCount() > 0) {
+                response += String.format("\n\n---\n💡 基于 %d 个相关代码片段和文档以及对话历史生成此回答", ragContext.getResultCount());
+            }
+            
+            return new ChatResult(response, true, ragContext.getResultCount());
+        }
+    }
+    
+    /**
+     * 保存对话记录
+     */
+    private void saveChatConversation(String taskId, String effectiveUserId, String query, String aiResponse) {
+        if (StringUtils.hasText(taskId)) {
+            try {
+                chatMemoryService.addCleanConversation(taskId, effectiveUserId, query, aiResponse);
+            } catch (Exception e) {
+                logger.error("保存纯净对话记录失败: taskId={}, userId={}, error={}", taskId, effectiveUserId, e.getMessage(), e);
+            }
+        }
+    }
+    
+    /**
+     * 生成会话 ID
+     * @param taskId 任务ID
+     * @param userId 用户ID
+     * @return 会话 ID
+     */
+    private String generateConversationId(String taskId, String userId) {
+        if (!StringUtils.hasText(taskId)) {
+            return "general_" + (StringUtils.hasText(userId) ? userId : "anonymous");
+        }
+        
+        if (!StringUtils.hasText(userId)) {
+            userId = "default_user";
+        }
+        
+        return "task_" + taskId + "_user_" + userId;
+    }
+    
+    // ==================== 函数式接口 ====================
+    
+    @FunctionalInterface
+    private interface SearchOperation<T> {
+        T execute() throws Exception;
+    }
+    
+    // ==================== 内部数据类 ====================
+    
+    /**
+     * 聊天记忆上下文
+     */
+    private static class ChatMemoryContext {
+        final ChatMemory chatMemory;
+        final String conversationId;
+        
+        ChatMemoryContext(ChatMemory chatMemory, String conversationId) {
+            this.chatMemory = chatMemory;
+            this.conversationId = conversationId;
+        }
+    }
+    
+    /**
+     * 聊天结果
+     */
+    private static class ChatResult {
+        final String response;
+        final boolean hasContext;
+        final int contextCount;
+        
+        ChatResult(String response, boolean hasContext, int contextCount) {
+            this.response = response;
+            this.hasContext = hasContext;
+            this.contextCount = contextCount;
         }
     }
 }

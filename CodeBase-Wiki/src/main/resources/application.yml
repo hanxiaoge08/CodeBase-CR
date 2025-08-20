@@ -13,7 +13,7 @@ spring:
       api-key: ${DASHSCOPE_API_KEY:your-key}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen3-coder-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus-latest}
       embedding:
         options:
           model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v4}
