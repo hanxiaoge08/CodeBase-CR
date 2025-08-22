@@ -107,8 +107,8 @@ public class DocumentProcessingService {
             log.info("开始生成目录详情，使用prompt版本: {}, catalogueName: {}, promptLength: {}", 
                     docPromptVersion, catalogueName, prompt.length());
             
-            // 调用LLM服务生成内容
-            String result = llmService.callWithTools(prompt);
+            // 调用LLM服务生成内容（不记录对话历史）
+            String result = llmService.callWithToolsWithoutMemory(prompt);
             
             if (!StringUtils.hasText(result)) {
                 throw new RuntimeException("LLM生成目录详情结果为空");

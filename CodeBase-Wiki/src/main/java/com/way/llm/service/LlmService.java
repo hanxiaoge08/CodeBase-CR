@@ -23,6 +23,7 @@ import static org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID;
 @Slf4j
 public class LlmService {
     private final ChatClient chatClient;
+    private final ChatClient chatClientWithoutMemory;
     private final MessageWindowChatMemory chatMemory;
     private final ToolCallback[] allTools;
 
@@ -32,8 +33,13 @@ public class LlmService {
                 .chatMemoryRepository(sqliteChatMemoryRepository)
                 .maxMessages(maxHistoryMessages)
                 .build();
+        // 带记忆的ChatClient（用于聊天）
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                .build();
+        // 不带记忆的ChatClient（用于后台任务）
+        this.chatClientWithoutMemory = chatClientBuilder
+                .clone()  // 克隆builder避免状态干扰
                 .build();
         this.allTools = allTools;
     }
@@ -44,6 +50,19 @@ public class LlmService {
                 .advisors(
                     a->a.param(CONVERSATION_ID, UUID.randomUUID().toString())
                 )
+                .options(ToolCallingChatOptions.builder().toolCallbacks(allTools).build())
+                .call()
+                .content();
+    }
+
+    /**
+     * 调用LLM服务但不记录对话历史（用于文档生成等任务）
+     * @param query 查询内容
+     * @return LLM响应结果
+     */
+    public String callWithToolsWithoutMemory(String query) {
+        return chatClientWithoutMemory
+                .prompt(query)
                 .options(ToolCallingChatOptions.builder().toolCallbacks(allTools).build())
                 .call()
                 .content();

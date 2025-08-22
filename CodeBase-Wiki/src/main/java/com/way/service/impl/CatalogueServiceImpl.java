@@ -73,7 +73,7 @@ public class CatalogueServiceImpl extends ServiceImpl<CatalogueMapper, Catalogue
                 .replace("{{$code_files}}", fileTree)
                 .replace("{{$repository_location}}", context.getLocalPath());
         log.info("LLM开始生成项目目录，使用prompt版本: {}", cataloguePromptVersion);
-        String result=llmService.callWithTools(genCataloguePrompt);
+        String result=llmService.callWithToolsWithoutMemory(genCataloguePrompt);
         log.info("LLM生成项目目录完成");
         
         CatalogueStruct catalogueStruct = processCatalogueStruct(result);
